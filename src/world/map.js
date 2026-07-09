@@ -3,6 +3,7 @@
 // 3개 라인(탑=좌·상단 가장자리, 미드=대각선, 봇=하·우단 가장자리) + 정글 + 강(주대각선).
 
 import { dist, distToSegment, clamp, TAU } from '../core/math.js';
+import { ENV, loadImg, imgReady } from '../ui/assets.js';
 
 export const WORLD = 3200;
 
@@ -72,13 +73,13 @@ export const CAMP_DEFS = [
 
 // 강의 대형 오브젝트 — 마음의 정령 (처치 시 팀 전체 버프)
 export const SPIRIT_DEF = {
-  name: '마음의 정령', x: 2120, y: 2120, hp: 2600, dmg: 70,
-  gold: 150, xp: 200, spawnAt: 150, respawn: 150,
+  id: 'spirit', name: '마음의 정령', x: 2120, y: 2120, hp: 2600, dmg: 70,
+  gold: 150, xp: 200, spawnAt: 150, respawn: 150, big: true,
 };
 // 지혜의 수호자 (후반 대형 버프)
 export const SAGE_DEF = {
-  name: '지혜의 수호자', x: 1080, y: 1080, hp: 4200, dmg: 110,
-  gold: 300, xp: 400, spawnAt: 420, respawn: 210,
+  id: 'sage', name: '지혜의 수호자', x: 1080, y: 1080, hp: 4200, dmg: 110,
+  gold: 300, xp: 400, spawnAt: 420, respawn: 210, big: true,
 };
 
 // ─── 시드 기반 난수 (지형 결정론) ───
@@ -177,7 +178,18 @@ export const BRUSH = [];
   }
 })();
 
+// 타일 패턴 생성 (텍스처 로드 시)
+function makePattern(g, src, tile = 640) {
+  const img = loadImg(src);
+  if (!imgReady(img)) return null;
+  const cv = document.createElement('canvas');
+  cv.width = tile; cv.height = tile;
+  cv.getContext('2d').drawImage(img, 0, 0, tile, tile);
+  return g.createPattern(cv, 'repeat');
+}
+
 // ─── 지형 렌더링 (오프스크린 1회) ───
+// AI 텍스처가 로드되어 있으면 텍스처 기반, 아니면 프로시저럴 폴백
 export function renderTerrain() {
   const scale = 0.5;
   const size = WORLD * scale;
@@ -186,28 +198,55 @@ export function renderTerrain() {
   const g = cv.getContext('2d');
   g.scale(scale, scale);
 
-  // 바닥
-  g.fillStyle = '#101f16';
-  g.fillRect(0, 0, WORLD, WORLD);
+  const P = {
+    ground: makePattern(g, ENV.ground, 720),
+    path: makePattern(g, ENV.path, 560),
+    water: makePattern(g, ENV.water, 560),
+  };
+  const trees = {
+    a: loadImg(ENV.tree1),
+    b: loadImg(ENV.tree2),
+  };
+  const treesReady = imgReady(trees.a) && imgReady(trees.b);
 
-  // 유기적 바닥 얼룩
+  // 바닥
+  if (P.ground) {
+    g.fillStyle = P.ground;
+    g.fillRect(0, 0, WORLD, WORLD);
+    // 다크 팔레트 유지용 톤 다운
+    g.fillStyle = 'rgba(6,14,10,0.42)';
+    g.fillRect(0, 0, WORLD, WORLD);
+  } else {
+    g.fillStyle = '#101f16';
+    g.fillRect(0, 0, WORLD, WORLD);
+  }
+
+  // 유기적 바닥 얼룩 (텍스처 위에도 옅게 — 깊이감)
   const rng = mulberry32(4242);
   for (let i = 0; i < 700; i++) {
     const x = rng() * WORLD, y = rng() * WORLD, r = 30 + rng() * 130;
-    g.fillStyle = rng() > 0.5 ? 'rgba(22,42,30,0.5)' : 'rgba(10,18,13,0.5)';
+    const a = P.ground ? 0.16 : 0.5;
+    g.fillStyle = rng() > 0.5 ? `rgba(22,42,30,${a})` : `rgba(10,18,13,${a})`;
     g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
   }
 
   // 강 (주대각선, 은은한 발광)
   g.save();
   g.lineCap = 'round';
-  g.strokeStyle = '#12333d';
-  g.lineWidth = 330;
+  // 강둑 어두운 테두리
+  g.strokeStyle = '#0a1c20';
+  g.lineWidth = 340;
   g.beginPath(); g.moveTo(880, 880); g.lineTo(2320, 2320); g.stroke();
-  g.strokeStyle = '#174754';
-  g.lineWidth = 240;
-  g.beginPath(); g.moveTo(880, 880); g.lineTo(2320, 2320); g.stroke();
-  g.strokeStyle = 'rgba(64,181,208,0.25)';
+  if (P.water) {
+    g.strokeStyle = P.water;
+    g.lineWidth = 290;
+    g.beginPath(); g.moveTo(880, 880); g.lineTo(2320, 2320); g.stroke();
+  } else {
+    g.strokeStyle = '#174754';
+    g.lineWidth = 240;
+    g.beginPath(); g.moveTo(880, 880); g.lineTo(2320, 2320); g.stroke();
+  }
+  g.strokeStyle = 'rgba(64,181,208,0.20)';
   g.lineWidth = 130;
   g.beginPath(); g.moveTo(900, 900); g.lineTo(2300, 2300); g.stroke();
   // 물결 줄무늬
@@ -223,19 +262,29 @@ export function renderTerrain() {
   }
   g.restore();
 
-  // 라인 (모래길)
+  // 라인 (흙길)
   function drawLane(pts) {
     g.save();
     g.lineCap = 'round'; g.lineJoin = 'round';
-    g.strokeStyle = '#3a3728';
-    g.lineWidth = 185;
     g.beginPath();
     g.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+    // 길 가장자리 어두운 테두리
+    g.strokeStyle = P.path ? '#1a170f' : '#3a3728';
+    g.lineWidth = 185;
     g.stroke();
-    g.strokeStyle = '#4a4632';
-    g.lineWidth = 150;
-    g.stroke();
+    if (P.path) {
+      g.strokeStyle = P.path;
+      g.lineWidth = 158;
+      g.stroke();
+      g.strokeStyle = 'rgba(20,16,8,0.25)';
+      g.lineWidth = 158;
+      g.stroke();
+    } else {
+      g.strokeStyle = '#4a4632';
+      g.lineWidth = 150;
+      g.stroke();
+    }
     g.strokeStyle = 'rgba(200,185,120,0.10)';
     g.lineWidth = 60;
     g.stroke();
@@ -282,16 +331,17 @@ export function renderTerrain() {
     g.beginPath(); g.arc(f.x, f.y, 150, 0, TAU); g.fill();
   }
 
-  // 수풀
+  // 수풀 (텍스처 위에서는 은은하게)
+  const brushA = P.ground ? 0.30 : 0.75;
   for (const b of BRUSH) {
     g.save();
     g.translate(b.x, b.y);
     g.rotate(b.a);
-    g.fillStyle = 'rgba(40,90,45,0.75)';
+    g.fillStyle = `rgba(34,74,40,${brushA})`;
     g.beginPath();
     g.ellipse(0, 0, b.r * 1.3, b.r * 0.8, 0, 0, TAU);
     g.fill();
-    g.fillStyle = 'rgba(60,130,60,0.4)';
+    g.fillStyle = `rgba(52,110,54,${brushA * 0.55})`;
     for (let i = 0; i < 5; i++) {
       g.beginPath();
       g.ellipse((i - 2) * b.r * 0.35, (i % 2) * 10 - 5, b.r * 0.3, b.r * 0.5, (i - 2) * 0.3, 0, TAU);
@@ -305,17 +355,30 @@ export function renderTerrain() {
     g.fillStyle = 'rgba(0,0,0,0.35)';
     g.beginPath(); g.arc(w.x + 10, w.y + 14, w.r, 0, TAU); g.fill();
   }
-  for (const w of WALLS) {
-    g.fillStyle = '#0c1a10';
-    g.beginPath(); g.arc(w.x, w.y, w.r, 0, TAU); g.fill();
-    for (const t of w.trees) {
-      const tx = w.x + t.dx, ty = w.y + t.dy;
-      g.fillStyle = '#15301c';
-      g.beginPath(); g.arc(tx, ty, t.s, 0, TAU); g.fill();
-      g.fillStyle = '#1f4527';
-      g.beginPath(); g.arc(tx - t.s * 0.25, ty - t.s * 0.3, t.s * 0.55, 0, TAU); g.fill();
-      g.fillStyle = 'rgba(90,180,100,0.25)';
-      g.beginPath(); g.arc(tx - t.s * 0.35, ty - t.s * 0.42, t.s * 0.25, 0, TAU); g.fill();
+  if (treesReady) {
+    // AI 나무 스프라이트 스탬핑
+    WALLS.forEach((w, i) => {
+      const img = i % 2 === 0 ? trees.a : trees.b;
+      const d = w.r * 2.55;
+      g.save();
+      g.translate(w.x, w.y);
+      g.rotate((i * 2.399) % TAU); // 골든앵글 회전으로 반복감 제거
+      g.drawImage(img, -d / 2, -d / 2, d, d);
+      g.restore();
+    });
+  } else {
+    for (const w of WALLS) {
+      g.fillStyle = '#0c1a10';
+      g.beginPath(); g.arc(w.x, w.y, w.r, 0, TAU); g.fill();
+      for (const t of w.trees) {
+        const tx = w.x + t.dx, ty = w.y + t.dy;
+        g.fillStyle = '#15301c';
+        g.beginPath(); g.arc(tx, ty, t.s, 0, TAU); g.fill();
+        g.fillStyle = '#1f4527';
+        g.beginPath(); g.arc(tx - t.s * 0.25, ty - t.s * 0.3, t.s * 0.55, 0, TAU); g.fill();
+        g.fillStyle = 'rgba(90,180,100,0.25)';
+        g.beginPath(); g.arc(tx - t.s * 0.35, ty - t.s * 0.42, t.s * 0.25, 0, TAU); g.fill();
+      }
     }
   }
 

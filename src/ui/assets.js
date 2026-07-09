@@ -6,6 +6,32 @@ export const champArt = (id) => `${ART_BASE}champ_${id}.jpg`;
 export const shadowArt = (id) => `${ART_BASE}shadow_${id}.jpg`;
 export const splashArt = `${ART_BASE}splash.jpg`;
 
+// 환경 에셋 (지형 텍스처 · 구조물 스프라이트)
+export const ENV = {
+  ground: `${ART_BASE}env/ground.jpg`,
+  path: `${ART_BASE}env/path.jpg`,
+  water: `${ART_BASE}env/water.jpg`,
+  tree1: `${ART_BASE}env/tree1.png`,
+  tree2: `${ART_BASE}env/tree2.png`,
+  towerBlue: `${ART_BASE}env/tower_blue.png`,
+  towerRed: `${ART_BASE}env/tower_red.png`,
+  nexusBlue: `${ART_BASE}env/nexus_blue.png`,
+  nexusRed: `${ART_BASE}env/nexus_red.png`,
+};
+export function envReady() {
+  return Object.values(ENV).every((src) => imgReady(loadImg(src)));
+}
+
+// 몬스터 스프라이트 (지형 렌더와 무관하게 개별 로드)
+export const MON = {
+  calm: `${ART_BASE}env/mon_calm.png`,
+  wolf: `${ART_BASE}env/mon_wolf.png`,
+  focus: `${ART_BASE}env/mon_focus.png`,
+  boar: `${ART_BASE}env/mon_boar.png`,
+  spirit: `${ART_BASE}env/mon_spirit.png`,
+  sage: `${ART_BASE}env/mon_sage.png`,
+};
+
 const cache = {};
 export function loadImg(src) {
   if (!cache[src]) {
@@ -26,6 +52,8 @@ export function preloadArt() {
     loadImg(champArt(c.id));
     loadImg(shadowArt(c.id));
   }
+  for (const src of Object.values(ENV)) loadImg(src);
+  for (const src of Object.values(MON)) loadImg(src);
 }
 
 // 원형 클리핑으로 초상 그리기 (캔버스 HUD용) — 얼굴이 위쪽에 있는 2:3 초상 기준 크롭

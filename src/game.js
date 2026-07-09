@@ -10,6 +10,7 @@ import { SelSystem } from './sel/sel.js';
 import { updateFX, drawFX, drawFloaters, clearFX, shake, spawnParticles, spawnRing, spawnFloater, addShake } from './fx/fx.js';
 import { drawHUD, drawWorldPings, pingWheelSelection, minimapRect } from './ui/hud.js';
 import { SFX, startMusic, stopMusic } from './audio/audio.js';
+import { envReady } from './ui/assets.js';
 
 export class Game {
   constructor(canvas, playerChampId, callbacks = {}) {
@@ -22,6 +23,18 @@ export class Game {
     this.result = null;
 
     this.terrain = renderTerrain();
+    this.envApplied = envReady(); // 텍스처가 늦게 로드되면 update에서 재렌더
+
+    // 앰비언트 반딧불
+    this.fireflies = [];
+    for (let i = 0; i < 70; i++) {
+      this.fireflies.push({
+        x: Math.random() * WORLD, y: Math.random() * WORLD,
+        a: Math.random() * Math.PI * 2,
+        s: 14 + Math.random() * 22,
+        ph: Math.random() * Math.PI * 2,
+      });
+    }
 
     // ── 유닛 생성 ──
     this.heroes = [];
@@ -493,6 +506,21 @@ export class Game {
     }
     this.time += dt;
 
+    // 환경 텍스처가 뒤늦게 로드되면 지형 1회 재렌더
+    if (!this.envApplied && envReady()) {
+      this.terrain = renderTerrain();
+      this.envApplied = true;
+    }
+
+    // 반딧불 유영
+    for (const f of this.fireflies) {
+      f.a += (Math.random() - 0.5) * 0.3;
+      f.x += Math.cos(f.a) * f.s * dt;
+      f.y += Math.sin(f.a) * f.s * dt;
+      if (f.x < 200) f.x = 200; if (f.x > WORLD - 200) f.x = WORLD - 200;
+      if (f.y < 200) f.y = 200; if (f.y > WORLD - 200) f.y = WORLD - 200;
+    }
+
     // 팀 버프 만료
     for (const team of ['blue', 'red']) {
       if (this.teamMods[team].until && this.time > this.teamMods[team].until) this.teamMods[team] = {};
@@ -590,6 +618,22 @@ export class Game {
     drawProjectiles(ctx);
     drawFX(ctx);
     drawFloaters(ctx);
+
+    // 앰비언트 반딧불 (뷰포트 내에서만)
+    const vx0 = this.cam.x - 50, vy0 = this.cam.y - 50;
+    const vx1 = this.cam.x + this.vw / this.zoom + 50, vy1 = this.cam.y + this.vh / this.zoom + 50;
+    for (const f of this.fireflies) {
+      if (f.x < vx0 || f.x > vx1 || f.y < vy0 || f.y > vy1) continue;
+      const tw = 0.35 + Math.sin(this.time * 2.2 + f.ph) * 0.3;
+      const fy = f.y + Math.sin(this.time * 1.4 + f.ph) * 6;
+      ctx.globalAlpha = Math.max(0, tw) * 0.35;
+      ctx.fillStyle = '#3fe5a0';
+      ctx.beginPath(); ctx.arc(f.x, fy, 6.5, 0, TAU); ctx.fill();
+      ctx.globalAlpha = Math.max(0, tw);
+      ctx.fillStyle = '#b8ffe0';
+      ctx.beginPath(); ctx.arc(f.x, fy, 2.4, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
 
     // 전장의 안개
     this.renderFog(ctx);

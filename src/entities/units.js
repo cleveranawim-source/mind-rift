@@ -5,8 +5,29 @@ import { dealDamage, spawnProjectile, addBuff } from '../combat/abilities.js';
 import { spawnParticles, spawnRing, spawnFloater, addShake } from '../fx/fx.js';
 import { SFX } from '../audio/audio.js';
 import { SHADOWS } from '../data/champions.js';
+import { champArt, shadowArt, drawPortraitCircle, ENV, MON, loadImg, imgReady } from '../ui/assets.js';
 
 export const TEAM_COLOR = { blue: '#4a9eff', red: '#ff5555', neutral: '#c8a44a' };
+
+// 스프라이트 변형 캐시 (ctx.filter는 프레임마다 쓰면 치명적으로 느려서 1회만 구움)
+const spriteVariantCache = new Map();
+function getSpriteVariant(src, variant) {
+  const key = src + '|' + variant;
+  if (spriteVariantCache.has(key)) return spriteVariantCache.get(key);
+  const img = loadImg(src);
+  if (!imgReady(img)) return null;
+  const cv = document.createElement('canvas');
+  cv.width = img.naturalWidth;
+  cv.height = img.naturalHeight;
+  const g = cv.getContext('2d');
+  g.drawImage(img, 0, 0);
+  g.globalCompositeOperation = 'source-atop';
+  if (variant === 'dim') g.fillStyle = 'rgba(70,80,88,0.62)';       // 무적 (탈색)
+  else if (variant === 'dead') g.fillStyle = 'rgba(15,18,20,0.78)'; // 잔해 (검게)
+  g.fillRect(0, 0, cv.width, cv.height);
+  spriteVariantCache.set(key, cv);
+  return cv;
+}
 
 let UID = 1;
 
@@ -335,31 +356,39 @@ export class Hero extends Unit {
       ctx.setLineDash([]);
     }
 
-    // 팀 링
+    // 팀 링 (이중 — 바깥 어두운 링 + 팀 컬러)
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(cx, cy, r + 3, 0, TAU); ctx.stroke();
     ctx.strokeStyle = TEAM_COLOR[this.team];
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, TAU); ctx.stroke();
 
-    // 본체
-    const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.2, cx, cy, r);
-    grad.addColorStop(0, this.color);
-    grad.addColorStop(1, this.champ.colorDark || '#333');
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+    // 본체 — AI 초상 토큰 (미로드 시 그라디언트 폴백)
+    const artSrc = this.team === 'red' ? shadowArt(this.champ.id) : champArt(this.champ.id);
+    if (!drawPortraitCircle(ctx, artSrc, cx, cy, r)) {
+      const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.2, cx, cy, r);
+      grad.addColorStop(0, this.color);
+      grad.addColorStop(1, this.champ.colorDark || '#333');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.font = `bold ${r * 0.75}px "Noto Sans KR", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.name[0], cx, cy + 1);
+      ctx.textBaseline = 'alphabetic';
+    }
 
-    // 방향 표시
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    // 방향 표시 (링 바깥 삼각 노치)
+    ctx.fillStyle = TEAM_COLOR[this.team];
+    ctx.save();
+    ctx.translate(cx + Math.cos(this.facing) * (r + 5), cy + Math.sin(this.facing) * (r + 5));
+    ctx.rotate(this.facing);
     ctx.beginPath();
-    ctx.arc(cx + Math.cos(this.facing) * r * 0.55, cy + Math.sin(this.facing) * r * 0.55, r * 0.18, 0, TAU);
-    ctx.fill();
-
-    // 이름 글자
-    ctx.fillStyle = 'rgba(255,255,255,0.95)';
-    ctx.font = `bold ${r * 0.75}px "Noto Sans KR", sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(this.name[0], cx, cy + 1);
-    ctx.textBaseline = 'alphabetic';
+    ctx.moveTo(6, 0); ctx.lineTo(-3, -5); ctx.lineTo(-3, 5);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
 
     // 캐스트 플래시
     if (this.castFlash > 0) {
@@ -543,10 +572,21 @@ export class Tower extends Unit {
   }
 
   draw(ctx, game) {
+    const sprite = loadImg(this.team === 'blue' ? ENV.towerBlue : ENV.towerRed);
+    const hasSprite = imgReady(sprite);
+
     if (this.dead) {
       // 잔해
-      ctx.fillStyle = 'rgba(60,60,60,0.6)';
-      ctx.beginPath(); ctx.arc(this.x, this.y, 30, 0, TAU); ctx.fill();
+      const deadSprite = hasSprite ? getSpriteVariant(this.team === 'blue' ? ENV.towerBlue : ENV.towerRed, 'dead') : null;
+      if (deadSprite) {
+        ctx.globalAlpha = 0.55;
+        const w = 130;
+        ctx.drawImage(deadSprite, this.x - w / 2, this.y - w * 0.68, w, w);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = 'rgba(60,60,60,0.6)';
+        ctx.beginPath(); ctx.arc(this.x, this.y, 30, 0, TAU); ctx.fill();
+      }
       return;
     }
     const c = this.team === 'blue' ? '#4a9eff' : '#ff5555';
@@ -561,35 +601,54 @@ export class Tower extends Unit {
       ctx.setLineDash([]);
       ctx.globalAlpha = 1;
     }
-    // 받침
+    // 받침 그림자
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath(); ctx.ellipse(this.x, this.y + 20, 48, 20, 0, 0, TAU); ctx.fill();
-    // 몸체 (육각)
-    ctx.fillStyle = dark;
-    ctx.strokeStyle = c;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * TAU - Math.PI / 2;
-      const px = this.x + Math.cos(a) * 38;
-      const py = this.y + Math.sin(a) * 38;
-      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-    }
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-    // 크리스탈
-    const pulse = 0.75 + Math.sin(game.time * 3 + this.id) * 0.25;
-    ctx.shadowColor = c;
-    ctx.shadowBlur = this.invulnerable ? 4 : 16 * pulse;
-    ctx.fillStyle = this.invulnerable ? '#888' : c;
-    ctx.beginPath();
-    ctx.moveTo(this.x, this.y - 26);
-    ctx.lineTo(this.x + 11, this.y - 6);
-    ctx.lineTo(this.x, this.y + 12);
-    ctx.lineTo(this.x - 11, this.y - 6);
-    ctx.closePath(); ctx.fill();
-    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.ellipse(this.x, this.y + 22, 52, 22, 0, 0, TAU); ctx.fill();
 
-    this.drawHpBar(ctx, game, { w: 64, h: 6, dy: 44 });
+    if (hasSprite) {
+      // AI 스프라이트 타워
+      const pulse = 0.75 + Math.sin(game.time * 3 + this.id) * 0.25;
+      const w = 150;
+      if (this.invulnerable) {
+        const dim = getSpriteVariant(this.team === 'blue' ? ENV.towerBlue : ENV.towerRed, 'dim');
+        ctx.drawImage(dim || sprite, this.x - w / 2, this.y - w * 0.68, w, w);
+      } else {
+        ctx.drawImage(sprite, this.x - w / 2, this.y - w * 0.68, w, w);
+        // 크리스탈 발광 오버레이
+        const gx = this.x, gy = this.y - w * 0.42;
+        const grad = ctx.createRadialGradient(gx, gy, 4, gx, gy, 34 * pulse);
+        grad.addColorStop(0, this.team === 'blue' ? 'rgba(120,190,255,0.5)' : 'rgba(255,130,110,0.5)');
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(gx, gy, 36 * pulse, 0, TAU); ctx.fill();
+      }
+    } else {
+      // 폴백: 육각 타워
+      ctx.fillStyle = dark;
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * TAU - Math.PI / 2;
+        const px = this.x + Math.cos(a) * 38;
+        const py = this.y + Math.sin(a) * 38;
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      const pulse = 0.75 + Math.sin(game.time * 3 + this.id) * 0.25;
+      ctx.shadowColor = c;
+      ctx.shadowBlur = this.invulnerable ? 4 : 16 * pulse;
+      ctx.fillStyle = this.invulnerable ? '#888' : c;
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y - 26);
+      ctx.lineTo(this.x + 11, this.y - 6);
+      ctx.lineTo(this.x, this.y + 12);
+      ctx.lineTo(this.x - 11, this.y - 6);
+      ctx.closePath(); ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    this.drawHpBar(ctx, game, { w: 64, h: 6, dy: hasSprite ? 108 : 44 });
   }
 }
 
@@ -608,15 +667,42 @@ export class Nexus extends Unit {
   draw(ctx, game) {
     const c = this.team === 'blue' ? '#4a9eff' : '#ff5555';
     const t = game.time;
+    const sprite = loadImg(this.team === 'blue' ? ENV.nexusBlue : ENV.nexusRed);
+
+    if (imgReady(sprite)) {
+      // AI 스프라이트 넥서스 (부유 애니메이션 + 발광)
+      const bob = Math.sin(t * 1.6) * 5;
+      const w = 230;
+      // 바닥 발광
+      const glow = ctx.createRadialGradient(this.x, this.y + 20, 20, this.x, this.y + 20, 130);
+      glow.addColorStop(0, this.team === 'blue' ? 'rgba(74,158,255,0.28)' : 'rgba(255,85,85,0.28)');
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(this.x, this.y + 20, 130, 0, TAU); ctx.fill();
+      if (this.invulnerable) {
+        const dim = getSpriteVariant(this.team === 'blue' ? ENV.nexusBlue : ENV.nexusRed, 'dim');
+        ctx.drawImage(dim || sprite, this.x - w / 2, this.y - w * 0.62 + bob, w, w);
+      } else {
+        ctx.drawImage(sprite, this.x - w / 2, this.y - w * 0.62 + bob, w, w);
+      }
+      // 펄스 링
+      ctx.strokeStyle = c;
+      ctx.globalAlpha = 0.3 + Math.sin(t * 2) * 0.12;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(this.x, this.y, 82 + Math.sin(t * 2) * 5, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 1;
+      this.drawHpBar(ctx, game, { w: 90, h: 8, dy: 120 });
+      return;
+    }
+
+    // 폴백: 회전 다이아 크리스탈
     ctx.save();
     ctx.translate(this.x, this.y);
-    // 외곽 링
     ctx.strokeStyle = c;
     ctx.globalAlpha = 0.35;
     ctx.lineWidth = 5;
     ctx.beginPath(); ctx.arc(0, 0, 68 + Math.sin(t * 2) * 4, 0, TAU); ctx.stroke();
     ctx.globalAlpha = 1;
-    // 크리스탈 (회전 다이아)
     ctx.rotate(t * 0.4);
     const grad = ctx.createLinearGradient(-40, -40, 40, 40);
     grad.addColorStop(0, '#ffffff');
@@ -680,8 +766,8 @@ export class Monster extends Unit {
   draw(ctx, game) {
     if (this.dead) return;
     const r = this.radius;
-    const isSpirit = this.def.name === '마음의 정령';
-    const isSage = this.def.name === '지혜의 수호자';
+    const isSpirit = this.def.id === 'spirit';
+    const isSage = this.def.id === 'sage';
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath(); ctx.ellipse(this.x, this.y + r * 0.5, r, r * 0.4, 0, 0, TAU); ctx.fill();
 
@@ -691,21 +777,36 @@ export class Monster extends Unit {
     if (isSpirit) { color = '#3a8a7a'; light = '#7ae8d0'; }
     if (isSage) { color = '#6a4a9a'; light = '#b08ae8'; }
 
-    const grad = ctx.createRadialGradient(this.x - r * 0.3, this.y - r * 0.3, r * 0.2, this.x, this.y, r);
-    grad.addColorStop(0, light);
-    grad.addColorStop(1, color);
-    ctx.fillStyle = grad;
-    if (isSpirit || isSage) {
-      ctx.shadowColor = light;
-      ctx.shadowBlur = 20 + Math.sin(game.time * 2) * 8;
+    // AI 스프라이트 (로드 시)
+    const sprite = this.def.id ? loadImg(MON[this.def.id]) : null;
+    if (sprite && imgReady(sprite)) {
+      const d = r * 3.1;
+      const bob = (isSpirit || isSage) ? Math.sin(game.time * 1.8 + this.id) * 5 : 0;
+      // 대형 오브젝트는 은은한 발광
+      if (isSpirit || isSage) {
+        const glow = ctx.createRadialGradient(this.x, this.y, r * 0.4, this.x, this.y, r * 2);
+        glow.addColorStop(0, isSpirit ? 'rgba(122,232,208,0.30)' : 'rgba(176,138,232,0.30)');
+        glow.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(this.x, this.y, r * 2, 0, TAU); ctx.fill();
+      }
+      ctx.save();
+      ctx.translate(this.x, this.y + bob);
+      if (Math.cos(this.facing) < 0) ctx.scale(-1, 1); // 이동 방향 따라 좌우 반전
+      ctx.drawImage(sprite, -d / 2, -d / 2 - r * 0.35, d, d);
+      ctx.restore();
+    } else {
+      // 폴백: 그라디언트 원
+      const grad = ctx.createRadialGradient(this.x - r * 0.3, this.y - r * 0.3, r * 0.2, this.x, this.y, r);
+      grad.addColorStop(0, light);
+      grad.addColorStop(1, color);
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      const ex = Math.cos(this.facing) * r * 0.35, ey = Math.sin(this.facing) * r * 0.35;
+      ctx.beginPath(); ctx.arc(this.x + ex - r * 0.18, this.y + ey, r * 0.11, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(this.x + ex + r * 0.18, this.y + ey, r * 0.11, 0, TAU); ctx.fill();
     }
-    ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, TAU); ctx.fill();
-    ctx.shadowBlur = 0;
-    // 눈
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    const ex = Math.cos(this.facing) * r * 0.35, ey = Math.sin(this.facing) * r * 0.35;
-    ctx.beginPath(); ctx.arc(this.x + ex - r * 0.18, this.y + ey, r * 0.11, 0, TAU); ctx.fill();
-    ctx.beginPath(); ctx.arc(this.x + ex + r * 0.18, this.y + ey, r * 0.11, 0, TAU); ctx.fill();
 
     // 이름 (가까울 때)
     if (dist(this.x, this.y, game.player.x, game.player.y) < 500) {
@@ -713,10 +814,10 @@ export class Monster extends Unit {
       ctx.textAlign = 'center';
       ctx.strokeStyle = 'rgba(0,0,0,0.7)';
       ctx.lineWidth = 3;
-      ctx.strokeText(this.def.name, this.x, this.y - r - 14);
+      ctx.strokeText(this.def.name, this.x, this.y - r - 20);
       ctx.fillStyle = light;
-      ctx.fillText(this.def.name, this.x, this.y - r - 14);
+      ctx.fillText(this.def.name, this.x, this.y - r - 20);
     }
-    this.drawHpBar(ctx, game, { w: this.def.big ? 50 : 36, h: 5, dy: 12 });
+    this.drawHpBar(ctx, game, { w: this.def.big ? 50 : 36, h: 5, dy: 16 });
   }
 }
