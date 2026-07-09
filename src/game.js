@@ -11,11 +11,14 @@ import { updateFX, drawFX, drawUnderFX, drawFloaters, clearFX, shake, spawnParti
 import { drawHUD, drawWorldPings, pingWheelSelection, minimapRect } from './ui/hud.js';
 import { SFX, startMusic, stopMusic } from './audio/audio.js';
 import { envReady, UNIT, MON, loadImg, imgReady } from './ui/assets.js';
+import { Renderer3D } from './render3d/renderer3d.js';
+import { drawUnitBars } from './ui/hud.js';
 
 export class Game {
   constructor(canvas, playerChampId, callbacks = {}) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
+    this.canvas = canvas; // WebGL (3D 씬)
+    this.overlay = document.getElementById('overlay');
+    this.ctx = this.overlay.getContext('2d'); // 2D 오버레이 (HUD·이펙트)
     this.callbacks = callbacks;
     this.time = 0;
     this.timescale = 1;
@@ -85,6 +88,9 @@ export class Game {
     this.fogCanvas = document.createElement('canvas');
     this.fogCanvas.width = 400; this.fogCanvas.height = 400;
     this.fogCtx = this.fogCanvas.getContext('2d');
+
+    // 3D 렌더러
+    this.r3d = new Renderer3D(canvas, this.terrain, this.fogCanvas);
 
     this.bindInput();
     this.resize();
@@ -159,7 +165,7 @@ export class Game {
   }
 
   screenToWorld(sx, sy) {
-    return { x: this.cam.x + sx / this.zoom, y: this.cam.y + sy / this.zoom };
+    return this.r3d.screenToWorld(sx, sy);
   }
 
   // 틸트가 심하면 조준이 흔들린다 (틸트의 체감!)
@@ -215,12 +221,16 @@ export class Game {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.vw = window.innerWidth;
     this.vh = window.innerHeight;
-    this.canvas.width = this.vw * dpr;
-    this.canvas.height = this.vh * dpr;
+    // 오버레이 (2D HUD)
+    this.overlay.width = this.vw * dpr;
+    this.overlay.height = this.vh * dpr;
+    this.overlay.style.width = this.vw + 'px';
+    this.overlay.style.height = this.vh + 'px';
     this.canvas.style.width = this.vw + 'px';
     this.canvas.style.height = this.vh + 'px';
     this.dpr = dpr;
-    this.zoom = clamp(Math.min(this.vw / 1450, this.vh / 900), 0.72, 1.1);
+    // 3D 렌더러
+    this.r3d.resize(this.vw, this.vh);
   }
 
   // ═══ 유닛 조회 ═══
@@ -520,6 +530,7 @@ export class Game {
     // 환경 텍스처가 뒤늦게 로드되면 지형 1회 재렌더
     if (!this.envApplied && envReady()) {
       this.terrain = renderTerrain();
+      this.r3d.setTerrain(this.terrain);
       this.envApplied = true;
     }
 
@@ -587,89 +598,58 @@ export class Game {
     for (const f of this.killFeed) f.t -= Math.min(rawDt, 0.05);
     this.killFeed = this.killFeed.filter((f) => f.t > 0);
 
-    // 카메라: 플레이어 추적
-    const targetX = this.player.x - this.vw / 2 / this.zoom;
-    const targetY = this.player.y - this.vh / 2 / this.zoom;
-    const lerpK = 1 - Math.exp(-8 * Math.min(rawDt, 0.05));
-    this.cam.x += (targetX - this.cam.x) * lerpK;
-    this.cam.y += (targetY - this.cam.y) * lerpK;
-    this.cam.x = clamp(this.cam.x, -100, WORLD - this.vw / this.zoom + 100);
-    this.cam.y = clamp(this.cam.y, -100, WORLD - this.vh / this.zoom + 100);
+    // 카메라 추적은 Renderer3D가 담당
   }
 
   // ═══ 렌더 ═══
   render() {
+    // 1) 안개 텍스처 갱신 → 2) 3D 씬 → 3) 투영 오버레이(이펙트·바·HUD)
+    this.fillFog();
+    this.r3d.render(this);
+
     const ctx = this.ctx;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.fillStyle = '#050906';
-    ctx.fillRect(0, 0, this.vw, this.vh);
+    ctx.clearRect(0, 0, this.vw, this.vh);
 
-    ctx.save();
-    ctx.scale(this.zoom, this.zoom);
-    ctx.translate(-this.cam.x + shake.x / this.zoom, -this.cam.y + shake.y / this.zoom);
-
-    // 지형
-    ctx.drawImage(this.terrain, 0, 0, WORLD, WORLD);
-
-    // 바닥 레이어: 데칼·시체·잔상
-    drawUnderFX(ctx);
-
-    // 장판 예고
+    drawUnderFX(ctx, this);
     drawTelegraphs(ctx, this);
-    // 월드 핑
     drawWorldPings(ctx, this);
+    drawUnitBars(ctx, this);
+    drawProjectiles(ctx, this);
+    drawFX(ctx, this);
+    drawFloaters(ctx, this);
 
-    // 유닛 (y 정렬)
-    const drawables = [];
-    for (const t of this.towers) drawables.push(t);
-    drawables.push(this.nexus.blue, this.nexus.red);
-    for (const m of this.monsters) if (!m.dead) drawables.push(m);
-    for (const m of this.minions) if (!m.dead && this.isVisible(m)) drawables.push(m);
-    for (const h of this.heroes) if (!h.dead && this.isVisible(h)) drawables.push(h);
-    drawables.sort((a, b) => a.y - b.y);
-    for (const d of drawables) d.draw(ctx, this);
-
-    drawProjectiles(ctx);
-    drawFX(ctx);
-    drawFloaters(ctx);
-
-    // 앰비언트 반딧불 + 강 반짝임 (뷰포트 내, 가산 발광)
-    const vx0 = this.cam.x - 50, vy0 = this.cam.y - 50;
-    const vx1 = this.cam.x + this.vw / this.zoom + 50, vy1 = this.cam.y + this.vh / this.zoom + 50;
+    // 앰비언트 반딧불 + 강 반짝임 (플레이어 주변만, 투영)
+    const P = (x, y, h) => this.r3d.project(x, y, h);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const f of this.fireflies) {
-      if (f.x < vx0 || f.x > vx1 || f.y < vy0 || f.y > vy1) continue;
+      if (dist(f.x, f.y, this.player.x, this.player.y) > 1300) continue;
       const tw = 0.35 + Math.sin(this.time * 2.2 + f.ph) * 0.3;
-      const fy = f.y + Math.sin(this.time * 1.4 + f.ph) * 6;
+      const pt = P(f.x, f.y, 26 + Math.sin(this.time * 1.4 + f.ph) * 8);
       ctx.globalAlpha = Math.max(0, tw) * 0.3;
       ctx.fillStyle = '#3fe5a0';
-      ctx.beginPath(); ctx.arc(f.x, fy, 6.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, 5.5, 0, TAU); ctx.fill();
       ctx.globalAlpha = Math.max(0, tw);
       ctx.fillStyle = '#b8ffe0';
-      ctx.beginPath(); ctx.arc(f.x, fy, 2.4, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, 2, 0, TAU); ctx.fill();
     }
     for (const s of this.riverSparks) {
-      if (s.x < vx0 || s.x > vx1 || s.y < vy0 || s.y > vy1) continue;
+      if (dist(s.x, s.y, this.player.x, this.player.y) > 1300) continue;
       const tw = Math.max(0, Math.sin(this.time * s.sp * 0.22 + s.ph));
       const drift = Math.sin(this.time * 0.5 + s.ph) * 26;
-      const sx = s.x + drift * 0.707, sy = s.y + drift * 0.707;
+      const pt = P(s.x + drift * 0.707, s.y + drift * 0.707, 3);
       ctx.globalAlpha = tw * 0.35;
       ctx.fillStyle = '#5adfff';
-      ctx.beginPath(); ctx.arc(sx, sy, 5.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, 4.5, 0, TAU); ctx.fill();
       ctx.globalAlpha = tw * 0.9;
       ctx.fillStyle = '#d8f8ff';
-      ctx.beginPath(); ctx.arc(sx, sy, 1.8, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, 1.6, 0, TAU); ctx.fill();
     }
     ctx.restore();
     ctx.globalAlpha = 1;
 
-    // 전장의 안개
-    this.renderFog(ctx);
-
-    ctx.restore();
-
-    // 시네마틱 비네트 (스크린 좌표)
+    // 시네마틱 비네트
     if (!this._vignette || this._vignette.w !== this.vw) {
       const grad = ctx.createRadialGradient(this.vw / 2, this.vh / 2, Math.min(this.vw, this.vh) * 0.42, this.vw / 2, this.vh / 2, Math.max(this.vw, this.vh) * 0.75);
       grad.addColorStop(0, 'rgba(0,0,0,0)');
@@ -683,10 +663,11 @@ export class Game {
     drawHUD(ctx, this);
   }
 
-  renderFog(ctx) {
+  fillFog() {
     const fc = this.fogCtx;
     const S = 400;
     const k = S / WORLD;
+    fc.globalCompositeOperation = 'source-over';
     fc.clearRect(0, 0, S, S);
     fc.fillStyle = 'rgba(3,7,5,0.72)';
     fc.fillRect(0, 0, S, S);
@@ -706,7 +687,6 @@ export class Game {
     for (const t of this.towers) if (t.team === myTeam && !t.dead) punch(t.x, t.y, 640);
     punch(NEXUS_POS[myTeam].x, NEXUS_POS[myTeam].y, 600);
     fc.globalCompositeOperation = 'source-over';
-    ctx.drawImage(this.fogCanvas, 0, 0, WORLD, WORLD);
   }
 
   // ═══ 루프 ═══

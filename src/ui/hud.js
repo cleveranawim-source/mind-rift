@@ -326,10 +326,13 @@ function drawMinimap(ctx, game) {
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(x + ping.x * k, y + ping.y * k, 6 * pulse, 0, TAU); ctx.stroke();
   }
-  // 카메라 뷰포트
+  // 카메라 뷰포트 (3D 투영 근사)
+  const ct = game.r3d.camTarget;
+  const ws = Math.max(0.0001, game.r3d.worldScaleAt(ct.x, ct.z));
+  const vwWorld = game.vw / ws, vhWorld = game.vh / (ws * 0.62);
   ctx.strokeStyle = 'rgba(255,255,255,0.35)';
   ctx.lineWidth = 1;
-  ctx.strokeRect(x + game.cam.x * k, y + game.cam.y * k, game.vw * k / game.zoom, game.vh * k / game.zoom);
+  ctx.strokeRect(x + (ct.x - vwWorld / 2) * k, y + (ct.z - vhWorld / 2) * k, vwWorld * k, vhWorld * k);
   ctx.restore();
 }
 
@@ -510,26 +513,147 @@ function drawObjectiveBanner(ctx, game) {
   ctx.globalAlpha = 1;
 }
 
-// ── 월드 핑 마커 그리기 (월드 좌표계에서 호출) ──
+// ── 월드 핑 마커 (3D 투영) ──
 export function drawWorldPings(ctx, game) {
+  const FS = 0.62;
   for (const ping of game.sel.pings) {
     const def = PING_TYPES[ping.type];
     const age = 2.4 - ping.t;
     const pulse = 1 + (age % 0.6) * 1.2;
+    const pt = game.r3d.project(ping.x, ping.y, 2);
+    const sc = game.r3d.worldScaleAt(ping.x, ping.y);
     ctx.globalAlpha = clamp(ping.t / 0.5, 0, 1);
     ctx.strokeStyle = def.color;
     ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(ping.x, ping.y, 24 * pulse, 0, TAU); ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(pt.x, pt.y, 24 * pulse * sc, 24 * pulse * sc * FS, 0, 0, TAU);
+    ctx.stroke();
     ctx.font = '22px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(def.icon, ping.x, ping.y - 30);
+    ctx.fillText(def.icon, pt.x, pt.y - 34);
     ctx.font = 'bold 13px "Noto Sans KR", sans-serif';
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-    ctx.strokeText(def.label, ping.x, ping.y + 42);
+    ctx.strokeText(def.label, pt.x, pt.y + 34);
     ctx.fillStyle = def.color;
-    ctx.fillText(def.label, ping.x, ping.y + 42);
+    ctx.fillText(def.label, pt.x, pt.y + 34);
     ctx.globalAlpha = 1;
+  }
+}
+
+// ── 유닛 체력바·이름표 오버레이 (3D 투영) ──
+function bar(ctx, cx, topY, w, h, ratio, color, { shield = 0, mana = null, ticks = 0 } = {}) {
+  const x = cx - w / 2;
+  ctx.fillStyle = 'rgba(0,0,0,0.62)';
+  ctx.fillRect(x - 1, topY - 1, w + 2, h + 2);
+  ctx.fillStyle = color;
+  ctx.fillRect(x, topY, w * clamp(ratio, 0, 1), h);
+  if (ticks > 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    for (let i = 1; i < ticks; i++) ctx.fillRect(x + (i / ticks) * w, topY, 1, h);
+  }
+  if (shield > 0) {
+    ctx.fillStyle = 'rgba(200,230,255,0.9)';
+    ctx.fillRect(x + w * clamp(ratio, 0, 1), topY, Math.min(w * shield, w - w * clamp(ratio, 0, 1)), h);
+  }
+  if (mana != null) {
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(x - 1, topY + h + 1, w + 2, 4);
+    ctx.fillStyle = '#4a7dff';
+    ctx.fillRect(x, topY + h + 1, w * clamp(mana, 0, 1), 3);
+  }
+}
+
+function unitColor(u, game) {
+  if (u === game.player) return '#3fe5a0';
+  if (u.team === game.player.team) return '#4a9eff';
+  if (u.team === 'neutral') return '#c8a44a';
+  return '#ff5555';
+}
+
+export function drawUnitBars(ctx, game) {
+  const P = (x, y, h) => game.r3d.project(x, y, h);
+  const S = (x, y) => clamp(game.r3d.worldScaleAt(x, y), 0.5, 1.4);
+  ctx.textAlign = 'center';
+
+  // 영웅
+  for (const u of game.heroes) {
+    if (u.dead || !game.isVisible(u)) continue;
+    const sc = S(u.x, u.y);
+    const pt = P(u.x, u.y, u.radius * 4.6);
+    // 이름표
+    ctx.font = `bold ${Math.round(12 * sc)}px "Noto Sans KR", sans-serif`;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    const label = `${u.name} · ${u.level}`;
+    ctx.strokeText(label, pt.x, pt.y - 8);
+    ctx.fillStyle = u.isPlayer ? '#3fe5a0' : (u.team === game.player.team ? '#bcd8ff' : '#ffb0a8');
+    ctx.fillText(label, pt.x, pt.y - 8);
+    bar(ctx, pt.x, pt.y - 2, 56 * sc, 6, u.hp / u.maxHp, unitColor(u, game), {
+      shield: u.shield / u.maxHp,
+      mana: u.maxMana ? u.mana / u.maxMana : null,
+      ticks: Math.floor(u.maxHp / 200),
+    });
+    // 귀환 채널
+    if (u.recalling) {
+      const gp = P(u.x, u.y, 2);
+      const t = u.recallT / 4.2;
+      ctx.strokeStyle = TEAM_COLOR[u.team];
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(gp.x, gp.y, 40 * sc, 40 * sc * 0.62, 0, -Math.PI / 2, -Math.PI / 2 + TAU * t);
+      ctx.stroke();
+    }
+    // 보호막 시각화
+    if (u.shield > 0) {
+      const gp = P(u.x, u.y, 30);
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = '#aaddff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(gp.x, gp.y, u.radius * 1.9 * sc, u.radius * 1.9 * sc * 0.75, 0, 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+  // 미니언 (다쳤을 때만)
+  for (const u of game.minions) {
+    if (u.dead || u.hp >= u.maxHp || !game.isVisible(u)) continue;
+    const sc = S(u.x, u.y);
+    const pt = P(u.x, u.y, u.radius * 3.3);
+    bar(ctx, pt.x, pt.y, 26 * sc, 3.5, u.hp / u.maxHp, unitColor(u, game));
+  }
+  // 타워 / 넥서스
+  for (const u of game.towers) {
+    if (u.dead) continue;
+    const sc = S(u.x, u.y);
+    const pt = P(u.x, u.y, 150);
+    bar(ctx, pt.x, pt.y, 60 * sc, 6, u.hp / u.maxHp, u.invulnerable ? '#8a95a0' : unitColor(u, game));
+  }
+  for (const team of ['blue', 'red']) {
+    const n = game.nexus[team];
+    if (n.dead) continue;
+    const sc = S(n.x, n.y);
+    const pt = P(n.x, n.y, 160);
+    bar(ctx, pt.x, pt.y, 86 * sc, 7, n.hp / n.maxHp, n.invulnerable ? '#8a95a0' : unitColor(n, game));
+  }
+  // 몬스터
+  for (const u of game.monsters) {
+    if (u.dead) continue;
+    const sc = S(u.x, u.y);
+    const pt = P(u.x, u.y, u.radius * 3.5);
+    if (u.hp < u.maxHp || u.def.big) {
+      bar(ctx, pt.x, pt.y, (u.def.big ? 48 : 34) * sc, 5, u.hp / u.maxHp, '#c8a44a');
+    }
+    // 이름 (가까울 때)
+    if (dist(u.x, u.y, game.player.x, game.player.y) < 520) {
+      ctx.font = `bold ${Math.round(11 * sc)}px "Noto Sans KR", sans-serif`;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.strokeText(u.def.name, pt.x, pt.y - 6);
+      ctx.fillStyle = '#e8d8a8';
+      ctx.fillText(u.def.name, pt.x, pt.y - 6);
+    }
   }
 }
 

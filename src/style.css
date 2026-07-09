@@ -28,6 +28,12 @@ html, body {
   display: block;
   cursor: crosshair;
 }
+#overlay {
+  position: fixed; inset: 0;
+  display: block;
+  pointer-events: none; /* 마우스는 #game으로 통과 */
+  z-index: 5;
+}
 
 /* ═══ 화면 공통 ═══ */
 #ui-root .screen {

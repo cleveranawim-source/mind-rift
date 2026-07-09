@@ -49,7 +49,7 @@ export function spawnRing(x, y, color, radius = 40, life = 0.4) {
 export function spawnFloater(x, y, text, { color = '#fff', size = 16, life = 1.0, crit = false } = {}) {
   floaters.push({
     x: x + rand(-12, 12), y,
-    vy: -60, text, color,
+    h: 0, vy: -60, text, color,
     size: crit ? size * 1.5 : size,
     life, maxLife: life, crit,
   });
@@ -100,7 +100,7 @@ export function updateFX(dt) {
     const f = floaters[i];
     f.life -= dt;
     if (f.life <= 0) { floaters.splice(i, 1); continue; }
-    f.y += f.vy * dt;
+    f.h -= f.vy * dt; // 3D에서는 높이로 상승
     f.vy *= Math.exp(-1.5 * dt);
   }
   for (let i = beams.length - 1; i >= 0; i--) {
@@ -116,45 +116,57 @@ export function updateFX(dt) {
   updateShake(dt);
 }
 
-// ─── 유닛 아래 레이어: 데칼 + 시체 + 잔상 ───
-export function drawUnderFX(ctx) {
+// ─── 유닛 아래 레이어: 데칼 + 시체 + 잔상 (3D 투영) ───
+const FS = 0.62; // 지면 원 원근 눌림 비율 (카메라 틸트 고정이라 상수)
+
+export function drawUnderFX(ctx, game) {
+  const P = (x, y, h = 0) => game.r3d.project(x, y, h);
+  const S = (x, y) => game.r3d.worldScaleAt(x, y);
   for (const d of decals) {
     const t = clamp(d.life / d.maxLife, 0, 1);
+    const pt = P(d.x, d.y, 1);
+    const s = S(d.x, d.y);
     ctx.globalAlpha = t * 0.8;
     ctx.save();
-    ctx.translate(d.x, d.y);
-    ctx.rotate(d.rot);
+    ctx.translate(pt.x, pt.y);
     ctx.fillStyle = d.color;
     ctx.beginPath();
-    ctx.ellipse(0, 0, d.r, d.r * 0.72, 0, 0, TAU);
+    ctx.ellipse(0, 0, d.r * s, d.r * s * FS, 0, 0, TAU);
     ctx.fill();
     ctx.restore();
   }
   ctx.globalAlpha = 1;
   for (const c of corpses) {
     const t = clamp(c.life / c.maxLife, 0, 1);
+    const pt = P(c.x, c.y, c.d * 0.3);
+    const s = S(c.x, c.y);
     ctx.globalAlpha = t * 0.75;
     ctx.save();
-    ctx.translate(c.x, c.y + (1 - t) * 10);
+    ctx.translate(pt.x, pt.y + (1 - t) * 8);
     if (c.flip) ctx.scale(-1, 1);
-    const s = 0.85 + t * 0.15;
-    ctx.drawImage(c.img, -c.d / 2 * s, -c.d / 2 * s, c.d * s, c.d * s);
+    const sz = c.d * s * (0.85 + t * 0.15);
+    ctx.drawImage(c.img, -sz / 2, -sz / 2, sz, sz);
     ctx.restore();
   }
   for (const a of afterimages) {
     const t = clamp(a.life / a.maxLife, 0, 1);
+    const pt = P(a.x, a.y, a.d * 0.35);
+    const s = S(a.x, a.y);
     ctx.globalAlpha = t * 0.45;
     ctx.save();
-    ctx.translate(a.x, a.y);
+    ctx.translate(pt.x, pt.y);
     if (a.flip) ctx.scale(-1, 1);
-    ctx.drawImage(a.img, -a.d / 2, -a.d / 2, a.d, a.d);
+    const sz = a.d * s;
+    ctx.drawImage(a.img, -sz / 2, -sz / 2, sz, sz);
     ctx.restore();
   }
   ctx.globalAlpha = 1;
 }
 
-export function drawFX(ctx) {
-  // ── 가산 발광 패스: 마법이 진짜 빛나 보이게 ──
+export function drawFX(ctx, game) {
+  // ── 가산 발광 패스 (3D 투영) ──
+  const P = (x, y, h = 0) => game.r3d.project(x, y, h);
+  const S = (x, y) => game.r3d.worldScaleAt(x, y);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
 
@@ -162,63 +174,74 @@ export function drawFX(ctx) {
   ctx.lineCap = 'round';
   for (const b of beams) {
     const t = b.life / b.maxLife;
-    ctx.globalAlpha = t * 0.35;
+    const a = P(b.x1, b.y1, 34), c = P(b.x2, b.y2, 34);
     ctx.strokeStyle = b.color;
+    ctx.globalAlpha = t * 0.35;
     ctx.lineWidth = (b.width * t + 1) * 3.5;
-    ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
     ctx.globalAlpha = t;
     ctx.lineWidth = b.width * t + 1;
-    ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
     ctx.globalAlpha = t * 0.8;
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = (b.width * t + 1) * 0.4;
-    ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
   }
 
   // 슬래시 궤적 (초승달 호)
   for (const s of slashes) {
     const t = clamp(s.life / s.maxLife, 0, 1);
+    const pt = P(s.x, s.y, 26);
+    const sc = S(s.x, s.y);
     const sweep = 1.3;
     const prog = 1 - t;
     ctx.save();
-    ctx.translate(s.x, s.y);
+    ctx.translate(pt.x, pt.y);
+    ctx.scale(1, FS);
     ctx.rotate(s.angle - sweep / 2 + sweep * prog);
     ctx.globalAlpha = t * 0.85;
     ctx.strokeStyle = s.color;
     ctx.lineWidth = 6 * t + 1;
-    ctx.beginPath(); ctx.arc(0, 0, s.radius, -0.55, 0.55); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, s.radius * sc, -0.55, 0.55); ctx.stroke();
     ctx.globalAlpha = t * 0.5;
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2.5 * t;
-    ctx.beginPath(); ctx.arc(0, 0, s.radius, -0.4, 0.4); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, s.radius * sc, -0.4, 0.4); ctx.stroke();
     ctx.restore();
   }
 
   // 파티클 (글로우 = 이중 원)
   for (const p of particles) {
     const t = clamp(p.life / p.maxLife, 0, 1);
+    const pt = P(p.x, p.y, 18);
+    const sc = S(p.x, p.y);
     if (p.ring) {
-      ctx.globalAlpha = t * 0.5;
+      const rr = p.size * (1.6 - t * 0.6) * sc;
       ctx.strokeStyle = p.color;
+      ctx.save();
+      ctx.translate(pt.x, pt.y);
+      ctx.scale(1, FS);
+      ctx.globalAlpha = t * 0.5;
       ctx.lineWidth = (3 * t + 1) * 2.6;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (1.6 - t * 0.6), 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.stroke();
       ctx.globalAlpha = t;
       ctx.lineWidth = 3 * t + 1;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (1.6 - t * 0.6), 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.stroke();
+      ctx.restore();
     } else {
-      const r = Math.max(0.1, p.size * t);
+      const r = Math.max(0.1, p.size * t * sc);
       if (p.glow) {
         ctx.globalAlpha = t * 0.32;
         ctx.fillStyle = p.color;
-        ctx.beginPath(); ctx.arc(p.x, p.y, r * 3, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, r * 3, 0, TAU); ctx.fill();
       }
       ctx.globalAlpha = t;
       ctx.fillStyle = p.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, r, 0, TAU); ctx.fill();
       if (p.glow) {
         ctx.globalAlpha = t * 0.85;
         ctx.fillStyle = '#ffffff';
-        ctx.beginPath(); ctx.arc(p.x, p.y, r * 0.4, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, r * 0.4, 0, TAU); ctx.fill();
       }
     }
   }
@@ -226,17 +249,19 @@ export function drawFX(ctx) {
   ctx.globalAlpha = 1;
 }
 
-export function drawFloaters(ctx) {
+export function drawFloaters(ctx, game) {
   for (const f of floaters) {
     const t = clamp(f.life / f.maxLife, 0, 1);
+    const pt = game.r3d.project(f.x, f.y, 60 + f.h);
+    const sc = clamp(game.r3d.worldScaleAt(f.x, f.y), 0.75, 1.15);
     ctx.globalAlpha = t;
-    ctx.font = `${f.crit ? 'bold ' : ''}${Math.round(f.size)}px "Noto Sans KR", sans-serif`;
+    ctx.font = `${f.crit ? 'bold ' : ''}${Math.round(f.size * sc)}px "Noto Sans KR", sans-serif`;
     ctx.textAlign = 'center';
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-    ctx.strokeText(f.text, f.x, f.y);
+    ctx.strokeText(f.text, pt.x, pt.y);
     ctx.fillStyle = f.color;
-    ctx.fillText(f.text, f.x, f.y);
+    ctx.fillText(f.text, pt.x, pt.y);
   }
   ctx.globalAlpha = 1;
 }

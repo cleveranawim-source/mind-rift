@@ -172,14 +172,16 @@ export function updateProjectiles(dt, game) {
   }
 }
 
-export function drawProjectiles(ctx) {
+export function drawProjectiles(ctx, game) {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   for (const p of projectiles) {
+    const pt = game.r3d.project(p.x, p.y, 38);
+    const sc = game.r3d.worldScaleAt(p.x, p.y);
     ctx.save();
-    ctx.translate(p.x, p.y);
+    ctx.translate(pt.x, pt.y);
     ctx.rotate(p.angle || 0);
-    const r = p.radius * 0.85;
+    const r = p.radius * 0.85 * sc;
     if (p.arrow) {
       // 바람 화살: 긴 빛줄기 + 화살촉
       const streak = ctx.createLinearGradient(-r * 5.5, 0, 14, 0);
@@ -254,27 +256,33 @@ export function updateTelegraphs(dt, game) {
 }
 
 export function drawTelegraphs(ctx, game) {
+  const FS = 0.62;
   for (const t of telegraphs) {
     const prog = clamp(t.t / t.delay, 0, 1);
-    // 룬 서클: 반대 방향으로 도는 이중 점선 링
+    const pt = game.r3d.project(t.x, t.y, 2);
+    const sc = game.r3d.worldScaleAt(t.x, t.y);
+    const R = t.radius * sc;
+    // 룬 서클: 반대 방향으로 도는 이중 점선 링 (원근 타원)
     ctx.save();
-    ctx.translate(t.x, t.y);
+    ctx.translate(pt.x, pt.y);
+    ctx.scale(1, FS);
     ctx.globalAlpha = 0.5;
     ctx.strokeStyle = t.color;
     ctx.lineWidth = 2.5;
     ctx.setLineDash([14, 10]);
     ctx.rotate(game.time * 1.4);
-    ctx.beginPath(); ctx.arc(0, 0, t.radius, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.stroke();
     ctx.rotate(-game.time * 2.8);
     ctx.setLineDash([6, 12]);
     ctx.globalAlpha = 0.35;
-    ctx.beginPath(); ctx.arc(0, 0, t.radius * 0.72, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, R * 0.72, 0, TAU); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.restore();
     // 채워지는 코어
+    ctx.rotate(game.time * 1.4);
     ctx.globalAlpha = 0.20;
     ctx.fillStyle = t.color;
-    ctx.beginPath(); ctx.arc(t.x, t.y, t.radius * prog, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, R * prog, 0, TAU); ctx.fill();
+    ctx.restore();
     ctx.globalAlpha = 1;
   }
 }
