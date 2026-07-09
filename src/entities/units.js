@@ -5,7 +5,7 @@ import { dealDamage, spawnProjectile, addBuff } from '../combat/abilities.js';
 import { spawnParticles, spawnRing, spawnFloater, addShake } from '../fx/fx.js';
 import { SFX } from '../audio/audio.js';
 import { SHADOWS } from '../data/champions.js';
-import { champArt, shadowArt, drawPortraitCircle, ENV, MON, loadImg, imgReady } from '../ui/assets.js';
+import { champArt, shadowArt, drawPortraitCircle, ENV, MON, UNIT, loadImg, imgReady } from '../ui/assets.js';
 
 export const TEAM_COLOR = { blue: '#4a9eff', red: '#ff5555', neutral: '#c8a44a' };
 
@@ -128,17 +128,19 @@ export class Unit {
     if (this.attackAnim > 0) this.attackAnim -= dt;
 
     // 타겟 추적 / 공격
+    this.moving = false;
     if (this.target && !this.target.dead) {
       if (this.inAttackRange(this.target)) {
         this.facing = Math.atan2(this.target.y - this.y, this.target.x - this.x);
         if (this.attackCd <= 0) this.performAttack(game);
       } else {
-        this.moveToward(this.target.x, this.target.y, dt);
+        this.moving = !this.moveToward(this.target.x, this.target.y, dt);
       }
     } else {
       this.target = null;
       if (this.moveTarget) {
         if (this.moveToward(this.moveTarget.x, this.moveTarget.y, dt)) this.moveTarget = null;
+        else this.moving = true;
       }
     }
   }
@@ -356,39 +358,52 @@ export class Hero extends Unit {
       ctx.setLineDash([]);
     }
 
-    // 팀 링 (이중 — 바깥 어두운 링 + 팀 컬러)
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.arc(cx, cy, r + 3, 0, TAU); ctx.stroke();
-    ctx.strokeStyle = TEAM_COLOR[this.team];
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, TAU); ctx.stroke();
+    // 발밑 유닛 링 (LOL식 타원)
+    const ringY = this.y + r * 0.55;
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.ellipse(this.x, ringY, r * 1.15, r * 0.5, 0, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = this.isPlayer ? '#3fe5a0' : TEAM_COLOR[this.team];
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(this.x, ringY, r * 1.15, r * 0.5, 0, 0, TAU); ctx.stroke();
 
-    // 본체 — AI 초상 토큰 (미로드 시 그라디언트 폴백)
-    const artSrc = this.team === 'red' ? shadowArt(this.champ.id) : champArt(this.champ.id);
-    if (!drawPortraitCircle(ctx, artSrc, cx, cy, r)) {
-      const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.2, cx, cy, r);
-      grad.addColorStop(0, this.color);
-      grad.addColorStop(1, this.champ.colorDark || '#333');
-      ctx.fillStyle = grad;
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
-      ctx.font = `bold ${r * 0.75}px "Noto Sans KR", sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(this.name[0], cx, cy + 1);
-      ctx.textBaseline = 'alphabetic';
+    // 본체 — 3D 렌더풍 전신 스프라이트
+    const unitKey = this.team === 'red' ? `shadow_${this.champ.id}` : this.champ.id;
+    const sprite = loadImg(UNIT[unitKey]);
+    const hasSprite = imgReady(sprite);
+    if (hasSprite) {
+      const d = r * 4.3;
+      // 이동 시 발걸음 바운스, 대기 시 잔잔한 숨쉬기
+      const bob = this.moving
+        ? Math.abs(Math.sin(game.time * 9 + this.id)) * 4.5
+        : Math.sin(game.time * 2 + this.id) * 1.5;
+      const wobble = this.moving ? Math.sin(game.time * 9 + this.id) * 0.045 : 0;
+      ctx.save();
+      ctx.translate(cx, cy - r * 0.75 - bob);
+      ctx.rotate(wobble);
+      if (Math.cos(this.facing) < 0) ctx.scale(-1, 1); // 이동 방향 반전
+      ctx.drawImage(sprite, -d / 2, -d / 2, d, d);
+      ctx.restore();
+    } else {
+      // 폴백: 초상 토큰
+      ctx.strokeStyle = TEAM_COLOR[this.team];
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, TAU); ctx.stroke();
+      const artSrc = this.team === 'red' ? shadowArt(this.champ.id) : champArt(this.champ.id);
+      if (!drawPortraitCircle(ctx, artSrc, cx, cy, r)) {
+        const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.2, cx, cy, r);
+        grad.addColorStop(0, this.color);
+        grad.addColorStop(1, this.champ.colorDark || '#333');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.font = `bold ${r * 0.75}px "Noto Sans KR", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.name[0], cx, cy + 1);
+        ctx.textBaseline = 'alphabetic';
+      }
     }
-
-    // 방향 표시 (링 바깥 삼각 노치)
-    ctx.fillStyle = TEAM_COLOR[this.team];
-    ctx.save();
-    ctx.translate(cx + Math.cos(this.facing) * (r + 5), cy + Math.sin(this.facing) * (r + 5));
-    ctx.rotate(this.facing);
-    ctx.beginPath();
-    ctx.moveTo(6, 0); ctx.lineTo(-3, -5); ctx.lineTo(-3, 5);
-    ctx.closePath(); ctx.fill();
-    ctx.restore();
 
     // 캐스트 플래시
     if (this.castFlash > 0) {
@@ -418,17 +433,18 @@ export class Hero extends Unit {
       ctx.globalAlpha = 1;
     }
 
-    // 이름표 + 레벨
+    // 이름표 + 레벨 (전신 스프라이트면 머리 위로 올림)
+    const labelDy = hasSprite ? r + 56 : r + 22;
     ctx.font = `bold 12px "Noto Sans KR", sans-serif`;
     ctx.textAlign = 'center';
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(0,0,0,0.75)';
     const label = `${this.name} · ${this.level}`;
-    ctx.strokeText(label, this.x, this.y - r - 22);
+    ctx.strokeText(label, this.x, this.y - labelDy);
     ctx.fillStyle = this.isPlayer ? '#3fe5a0' : (this.team === game.player.team ? '#bcd8ff' : '#ffb0a8');
-    ctx.fillText(label, this.x, this.y - r - 22);
+    ctx.fillText(label, this.x, this.y - labelDy);
 
-    this.drawHpBar(ctx, game, { w: 54, h: 6, dy: 18, showMana: true });
+    this.drawHpBar(ctx, game, { w: 54, h: 6, dy: hasSprite ? 52 : 18, showMana: true });
   }
 }
 
@@ -484,30 +500,43 @@ export class Minion extends Unit {
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath(); ctx.ellipse(this.x, this.y + r * 0.5, r * 0.9, r * 0.35, 0, 0, TAU); ctx.fill();
 
-    const base = this.team === 'blue' ? '#3a76c4' : '#c44a3a';
-    const light = this.team === 'blue' ? '#6aa8e8' : '#e87a6a';
-    const grad = ctx.createRadialGradient(this.x - r * 0.3, this.y - r * 0.3, r * 0.15, this.x, this.y, r);
-    grad.addColorStop(0, light);
-    grad.addColorStop(1, base);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    if (this.type === 'cannon') {
-      // 대포 미니언은 사각
+    // 3D 렌더풍 미니언 스프라이트
+    const sprite = loadImg(UNIT[this.team === 'blue' ? 'minion_blue' : 'minion_red']);
+    if (imgReady(sprite)) {
+      const d = r * (this.type === 'cannon' ? 3.6 : 3.1);
+      const bob = Math.abs(Math.sin(game.time * 8 + this.id)) * 2.5;
       ctx.save();
-      ctx.translate(this.x, this.y);
-      ctx.rotate(this.facing);
-      ctx.fillRect(-r * 0.85, -r * 0.85, r * 1.7, r * 1.7);
+      ctx.translate(this.x, this.y - r * 0.6 - bob);
+      if (Math.cos(this.facing) < 0) ctx.scale(-1, 1);
+      // 캐스터는 살짝 보라 톤, 대포는 크게
+      if (this.type === 'caster') ctx.globalAlpha = 0.92;
+      ctx.drawImage(sprite, -d / 2, -d / 2, d, d);
       ctx.restore();
+      ctx.globalAlpha = 1;
     } else {
-      ctx.arc(this.x, this.y, r, 0, TAU);
-      ctx.fill();
+      const base = this.team === 'blue' ? '#3a76c4' : '#c44a3a';
+      const light = this.team === 'blue' ? '#6aa8e8' : '#e87a6a';
+      const grad = ctx.createRadialGradient(this.x - r * 0.3, this.y - r * 0.3, r * 0.15, this.x, this.y, r);
+      grad.addColorStop(0, light);
+      grad.addColorStop(1, base);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      if (this.type === 'cannon') {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.facing);
+        ctx.fillRect(-r * 0.85, -r * 0.85, r * 1.7, r * 1.7);
+        ctx.restore();
+      } else {
+        ctx.arc(this.x, this.y, r, 0, TAU);
+        ctx.fill();
+      }
+      if (this.type === 'caster') {
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.beginPath(); ctx.arc(this.x, this.y, r * 0.35, 0, TAU); ctx.fill();
+      }
     }
-    // 캐스터 표식
-    if (this.type === 'caster') {
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.beginPath(); ctx.arc(this.x, this.y, r * 0.35, 0, TAU); ctx.fill();
-    }
-    this.drawHpBar(ctx, game, { w: 28, h: 3.5, dy: 10 });
+    this.drawHpBar(ctx, game, { w: 28, h: 3.5, dy: 22 });
   }
 }
 

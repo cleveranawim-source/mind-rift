@@ -22,6 +22,22 @@ export function envReady() {
   return Object.values(ENV).every((src) => imgReady(loadImg(src)));
 }
 
+// 3D 렌더풍 전신 유닛 스프라이트
+export const UNIT = {
+  guardian: `${ART_BASE}env/unit_guardian.png`,
+  fox: `${ART_BASE}env/unit_fox.png`,
+  flame: `${ART_BASE}env/unit_flame.png`,
+  gale: `${ART_BASE}env/unit_gale.png`,
+  moon: `${ART_BASE}env/unit_moon.png`,
+  shadow_guardian: `${ART_BASE}env/unit_shadow_guardian.png`,
+  shadow_fox: `${ART_BASE}env/unit_shadow_fox.png`,
+  shadow_flame: `${ART_BASE}env/unit_shadow_flame.png`,
+  shadow_gale: `${ART_BASE}env/unit_shadow_gale.png`,
+  shadow_moon: `${ART_BASE}env/unit_shadow_moon.png`,
+  minion_blue: `${ART_BASE}env/unit_minion_blue.png`,
+  minion_red: `${ART_BASE}env/unit_minion_red.png`,
+};
+
 // 몬스터 스프라이트 (지형 렌더와 무관하게 개별 로드)
 export const MON = {
   calm: `${ART_BASE}env/mon_calm.png`,
@@ -54,6 +70,7 @@ export function preloadArt() {
   }
   for (const src of Object.values(ENV)) loadImg(src);
   for (const src of Object.values(MON)) loadImg(src);
+  for (const src of Object.values(UNIT)) loadImg(src);
 }
 
 // 원형 클리핑으로 초상 그리기 (캔버스 HUD용) — 얼굴이 위쪽에 있는 2:3 초상 기준 크롭
