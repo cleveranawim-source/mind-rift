@@ -2,6 +2,9 @@
 import { Game } from './game.js';
 import { showTitle, showPick, showEnd, clearScreen, initShop, destroyShop } from './ui/screens.js';
 import { initAudio, resumeAudio } from './audio/audio.js';
+import { preloadArt } from './ui/assets.js';
+
+preloadArt();
 
 let game = null;
 let lastChampId = 'flame';

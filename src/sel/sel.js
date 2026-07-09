@@ -4,6 +4,7 @@ import { clamp, dist } from '../core/math.js';
 import { spawnRing, spawnFloater, spawnParticles } from '../fx/fx.js';
 import { SFX } from '../audio/audio.js';
 import { addBuff } from '../combat/abilities.js';
+import { champArt, shadowArt } from '../ui/assets.js';
 
 export class SelSystem {
   constructor(game) {
@@ -138,14 +139,16 @@ export class SelSystem {
     this.game.timescale = 0;
     SFX.event();
 
-    // text/speaker는 함수일 수 있음 (동적 아군 참조)
+    // text/speaker/image는 함수일 수 있음 (동적 아군 참조)
     const speaker = typeof ev.speaker === 'function' ? ev.speaker(this.game, this) : ev.speaker;
     const text = typeof ev.text === 'function' ? ev.text(this.game, this) : ev.text;
+    const image = typeof ev.image === 'function' ? ev.image(this.game, this) : ev.image;
 
     const root = document.getElementById('event-layer');
     root.innerHTML = `
       <div class="event-backdrop"></div>
       <div class="event-modal">
+        ${image ? `<img class="event-portrait" src="${image.src}" style="border-color:${image.color || 'var(--mint-dim)'}" alt="" />` : ''}
         <div class="event-tag">⚡ 마음의 순간</div>
         <div class="event-title">${ev.title}</div>
         <div class="event-speaker">${speaker}</div>
@@ -253,6 +256,7 @@ function buildEvents() {
         return false;
       },
       title: '팀원의 실수',
+      image: (g, sel) => sel._mistakeAlly ? { src: champArt(sel._mistakeAlly.champ.id), color: sel._mistakeAlly.color } : null,
       speaker: (g, sel) => `💬 아군 ${sel._mistakeAlly?.name || '팀원'}`,
       text: (g, sel) => `무리하게 싸우다 ${sel._mistakeAlly?.name || '팀원'}이(가) 잡혔다.<br>채팅창에 메시지가 올라온다.<br><b>"아… 미안, 내가 무리했다 ㅠㅠ"</b><br><br>뭐라고 답할까?`,
       choices: [
@@ -290,6 +294,7 @@ function buildEvents() {
       id: 'provoke',
       trigger: (g) => g.time > 220,
       title: '상대의 도발',
+      image: () => ({ src: shadowArt('moon'), color: '#8a95a8' }),
       speaker: '💬 [전체] 그림자 냉소',
       text: '전체 채팅에 상대 팀의 메시지가 떴다.<br><b>"그 실력으로 게임 왜 함? ㅋㅋㅋ"</b><br><br>손이 근질거린다. 어떻게 할까?',
       choices: [
@@ -329,6 +334,7 @@ function buildEvents() {
         return true;
       },
       title: '팀원의 포기 선언',
+      image: (g, sel) => sel._giveupAlly ? { src: champArt(sel._giveupAlly.champ.id), color: sel._giveupAlly.color } : null,
       speaker: (g, sel) => `💬 아군 ${sel._giveupAlly?.name || '팀원'}`,
       text: (g, sel) => `전세가 밀리는 것 같자 ${sel._giveupAlly?.name || '팀원'}이(가) 채팅을 쳤다.<br><b>"하… 이 판 진 듯. 나 그냥 라인에서 대기할래."</b><br><br>아직 넥서스는 무너지지 않았다.`,
       choices: [
@@ -368,6 +374,7 @@ function buildEvents() {
       id: 'self-talk',
       trigger: (g) => g.player.deaths >= 3,
       title: '내 안의 목소리',
+      image: (g) => ({ src: shadowArt(g.player.champ.id), color: '#6a7484' }),
       speaker: '🌫️ 마음속',
       text: '세 번째 죽음. 화면이 회색으로 변한 사이,<br>마음속에서 목소리가 들려온다.<br><b>"…나 오늘 왜 이러지."</b><br><br>스스로에게 뭐라고 말해줄까?',
       choices: [
@@ -398,6 +405,7 @@ function buildEvents() {
       id: 'final-push',
       trigger: (g) => g.time > 520,
       title: '마지막 결전의 순간',
+      image: (g) => ({ src: champArt(g.player.champ.id), color: g.player.color }),
       speaker: '⚔️ 결단의 시간',
       text: '경기가 무르익었다. 다음 한타가 승부를 가른다.<br>팀에게 어떤 말을 남길까?',
       choices: [

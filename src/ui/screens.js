@@ -3,6 +3,7 @@ import { CHAMPIONS, SHADOWS, ITEMS } from '../data/champions.js';
 import { FOUNTAIN } from '../world/map.js';
 import { dist } from '../core/math.js';
 import { SFX } from '../audio/audio.js';
+import { champArt, shadowArt, splashArt } from './assets.js';
 
 const root = () => document.getElementById('ui-root');
 
@@ -10,7 +11,8 @@ const root = () => document.getElementById('ui-root');
 export function showTitle(onStart) {
   root().innerHTML = `
     <div class="screen title-screen">
-      <div class="title-bg"></div>
+      <div class="title-splash" style="background-image:url('${splashArt}')"></div>
+      <div class="title-fade"></div>
       <div class="title-content">
         <div class="title-tag">사회정서학습 × MOBA</div>
         <h1 class="game-title">마음의 협곡</h1>
@@ -44,8 +46,8 @@ export function showPick(onPick) {
     const shadow = SHADOWS[c.id];
     return `
     <div class="champ-card" data-id="${c.id}" style="--cc:${c.color};--cd:${c.colorDark}">
-      <div class="champ-portrait">
-        <div class="champ-circle">${c.name[0]}</div>
+      <div class="champ-imgwrap">
+        <img class="champ-img" src="${champArt(c.id)}" alt="${c.name}" draggable="false" />
       </div>
       <div class="champ-role">${c.role} · ${c.roleEn}</div>
       <div class="champ-name">${c.name}</div>
@@ -56,7 +58,10 @@ export function showPick(onPick) {
         <span title="${c.Q.desc}">Q ${c.Q.name}</span>
         <span title="${c.W.desc}">W ${c.W.name}</span>
       </div>
-      <div class="champ-vs">vs 그림자 <b style="color:${shadow.color}">${shadow.name}</b></div>
+      <div class="champ-vs">
+        <img class="vs-img" src="${shadowArt(c.id)}" alt="${shadow.name}" draggable="false" />
+        vs 그림자 <b style="color:${shadow.color}">${shadow.name}</b>
+      </div>
     </div>`;
   }).join('');
 
@@ -165,6 +170,7 @@ export function showEnd(game, onRestart) {
   root().innerHTML = `
     <div class="screen end-screen ${victory ? 'victory' : 'defeat'}">
       <div class="end-content">
+        <img class="end-portrait" src="${champArt(p.champ.id)}" alt="${p.name}" style="border-color:${p.color}" />
         <div class="end-result">${victory ? '🏆 승리!' : '🌧️ 패배…'}</div>
         <div class="end-sub">${victory ? '그림자 군단의 넥서스가 무너졌다' : '오늘의 협곡은 그림자의 것. 하지만 진짜 성장은 지금부터'}</div>
 

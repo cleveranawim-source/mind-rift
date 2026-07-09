@@ -67,15 +67,26 @@ html, body {
 .btn-ghost:hover { background: rgba(63,229,160,0.1); }
 
 /* ═══ 타이틀 ═══ */
-.title-screen { background: radial-gradient(ellipse at 50% 30%, #0a1a12 0%, var(--bg) 70%); }
-.title-bg {
+.title-screen { background: var(--bg); }
+.title-splash {
+  position: absolute; inset: 0;
+  background-size: cover;
+  background-position: center 30%;
+  animation: splash-drift 26s ease-in-out infinite alternate;
+}
+@keyframes splash-drift {
+  from { transform: scale(1); }
+  to { transform: scale(1.06); }
+}
+.title-fade {
   position: absolute; inset: 0;
   background:
-    radial-gradient(circle at 20% 80%, rgba(74,158,255,0.07) 0%, transparent 40%),
-    radial-gradient(circle at 80% 20%, rgba(255,85,68,0.07) 0%, transparent 40%);
+    linear-gradient(180deg, rgba(5,9,6,0.35) 0%, rgba(5,9,6,0.1) 30%, rgba(5,9,6,0.62) 68%, rgba(5,9,6,0.92) 100%),
+    radial-gradient(ellipse at 50% 100%, transparent 40%, rgba(5,9,6,0.5) 100%);
   pointer-events: none;
 }
-.title-content { text-align: center; z-index: 1; padding: 40px 20px; }
+.title-content { text-align: center; z-index: 1; padding: 40px 20px; margin-top: auto; margin-bottom: 4vh; }
+.title-screen { justify-content: flex-end; }
 .title-tag {
   display: inline-block;
   font-size: 13px; font-weight: 700; letter-spacing: 3px;
@@ -144,11 +155,12 @@ kbd {
   max-width: 1240px;
 }
 .champ-card {
-  width: 220px;
+  width: 226px;
   background: linear-gradient(180deg, var(--panel2) 0%, var(--panel) 100%);
   border: 1.5px solid #1d3427;
   border-radius: 18px;
-  padding: 22px 18px 16px;
+  padding: 0 18px 16px;
+  overflow: hidden;
   cursor: pointer;
   text-align: center;
   transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
@@ -158,16 +170,24 @@ kbd {
   border-color: var(--cc);
   box-shadow: 0 14px 44px -8px color-mix(in srgb, var(--cc) 45%, transparent);
 }
-.champ-circle {
-  width: 84px; height: 84px;
-  margin: 0 auto 12px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 32% 28%, var(--cc), var(--cd));
-  border: 3px solid var(--cc);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 36px; font-weight: 900; color: #fff;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+.champ-imgwrap {
+  margin: 0 -18px 14px;
+  height: 230px;
+  overflow: hidden;
+  position: relative;
 }
+.champ-imgwrap::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, transparent 55%, var(--panel2) 100%);
+}
+.champ-img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  object-position: center 18%;
+  transition: transform 0.3s;
+}
+.champ-card:hover .champ-img { transform: scale(1.06); }
 .champ-role { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: var(--text-dim); }
 .champ-name { font-size: 24px; font-weight: 900; color: var(--cc); margin: 3px 0 1px; }
 .champ-title { font-size: 13px; color: var(--text-dim); margin-bottom: 10px; }
@@ -185,7 +205,16 @@ kbd {
   padding: 4px 9px; border-radius: 6px;
   color: var(--text);
 }
-.champ-vs { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+.champ-vs {
+  font-size: 12px; color: var(--text-dim); margin-top: 8px;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+}
+.vs-img {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid #2a3a44;
+}
 .pick-footer { margin-top: 30px; font-size: 13px; color: var(--text-dim); }
 
 /* ═══ SEL 이벤트 모달 ═══ */
@@ -213,6 +242,15 @@ kbd {
 .event-tag {
   font-size: 12px; font-weight: 700; letter-spacing: 2px;
   color: var(--mint); margin-bottom: 10px;
+}
+.event-portrait {
+  position: absolute;
+  top: -34px; right: 30px;
+  width: 92px; height: 92px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--mint-dim);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6);
 }
 .event-title {
   font-family: 'Black Han Sans', 'Noto Sans KR', sans-serif;
@@ -308,6 +346,15 @@ kbd {
 }
 .end-screen.victory .end-content { border-color: var(--mint-dim); box-shadow: 0 0 90px rgba(63,229,160,0.2); }
 .end-screen.defeat .end-content { border-color: #4a2a25; box-shadow: 0 0 90px rgba(255,85,68,0.12); }
+.end-portrait {
+  width: 96px; height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center 15%;
+  border: 3px solid var(--mint);
+  margin-bottom: 10px;
+  box-shadow: 0 0 34px rgba(63,229,160,0.3);
+}
 .end-result {
   font-family: 'Black Han Sans', 'Noto Sans KR', sans-serif;
   font-size: 52px;

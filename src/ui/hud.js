@@ -3,6 +3,7 @@ import { clamp, TAU, dist } from '../core/math.js';
 import { WORLD, LANES, NEXUS_POS } from '../world/map.js';
 import { DASH } from '../data/champions.js';
 import { TEAM_COLOR } from '../entities/units.js';
+import { champArt, drawPortraitCircle } from './assets.js';
 
 export const MINIMAP = { size: 210, pad: 14 }; // 우하단
 
@@ -131,20 +132,22 @@ function drawSkillBar(ctx, game) {
   ctx.lineWidth = 1;
   roundRect(ctx, x0 - 16, y0 - 44, totalW + 32, 152, 14); ctx.stroke();
 
-  // 초상 + 레벨 (왼쪽)
+  // 초상 + 레벨 (왼쪽) — AI 아트 초상, 미로드 시 폴백
   const px = x0 - 70, py = y0 + 8;
   ctx.strokeStyle = p.color;
   ctx.lineWidth = 3;
   ctx.beginPath(); ctx.arc(px, py + 12, 30, 0, TAU); ctx.stroke();
-  const grad = ctx.createRadialGradient(px - 8, py + 4, 5, px, py + 12, 30);
-  grad.addColorStop(0, p.color);
-  grad.addColorStop(1, p.champ.colorDark);
-  ctx.fillStyle = grad;
-  ctx.beginPath(); ctx.arc(px, py + 12, 27, 0, TAU); ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 22px "Noto Sans KR", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(p.name[0], px, py + 20);
+  if (!drawPortraitCircle(ctx, champArt(p.champ.id), px, py + 12, 27)) {
+    const grad = ctx.createRadialGradient(px - 8, py + 4, 5, px, py + 12, 30);
+    grad.addColorStop(0, p.color);
+    grad.addColorStop(1, p.champ.colorDark);
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(px, py + 12, 27, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 22px "Noto Sans KR", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.name[0], px, py + 20);
+  }
   // 레벨 뱃지
   ctx.fillStyle = '#0a120d';
   ctx.beginPath(); ctx.arc(px + 22, py + 32, 11, 0, TAU); ctx.fill();
