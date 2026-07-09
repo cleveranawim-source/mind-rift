@@ -2,7 +2,7 @@
 import { dist, clamp, norm, TAU } from '../core/math.js';
 import { collideWalls, LANES, FOUNTAIN, NEXUS_POS } from '../world/map.js';
 import { dealDamage, spawnProjectile, addBuff } from '../combat/abilities.js';
-import { spawnParticles, spawnRing, spawnFloater, addShake } from '../fx/fx.js';
+import { spawnParticles, spawnRing, spawnFloater, spawnSlash, spawnCorpse, addShake } from '../fx/fx.js';
 import { SFX } from '../audio/audio.js';
 import { SHADOWS } from '../data/champions.js';
 import { champArt, shadowArt, drawPortraitCircle, ENV, MON, UNIT, loadImg, imgReady } from '../ui/assets.js';
@@ -22,8 +22,9 @@ function getSpriteVariant(src, variant) {
   const g = cv.getContext('2d');
   g.drawImage(img, 0, 0);
   g.globalCompositeOperation = 'source-atop';
-  if (variant === 'dim') g.fillStyle = 'rgba(70,80,88,0.62)';       // 무적 (탈색)
-  else if (variant === 'dead') g.fillStyle = 'rgba(15,18,20,0.78)'; // 잔해 (검게)
+  if (variant === 'dim') g.fillStyle = 'rgba(70,80,88,0.62)';        // 무적 (탈색)
+  else if (variant === 'dead') g.fillStyle = 'rgba(15,18,20,0.78)';  // 잔해 (검게)
+  else if (variant === 'flash') g.fillStyle = 'rgba(255,255,255,0.92)'; // 피격 플래시
   g.fillRect(0, 0, cv.width, cv.height);
   spriteVariantCache.set(key, cv);
   return cv;
@@ -106,7 +107,10 @@ export class Unit {
       if (this === game.player) SFX.attackRanged();
     } else {
       dealDamage(t, this.effAd(), this, game);
-      spawnParticles({ x: t.x, y: t.y, count: 5, color: '#ffcc88', speed: 110, life: 0.25, size: 3 });
+      // 슬래시 궤적 + 스파크
+      const a = Math.atan2(t.y - this.y, t.x - this.x);
+      spawnSlash(this.x + Math.cos(a) * this.radius * 0.6, this.y + Math.sin(a) * this.radius * 0.6, a, this.radius + 26, this.isHero ? '#ffe8c0' : '#e8d8c0');
+      spawnParticles({ x: t.x, y: t.y, count: 6, color: '#ffcc88', speed: 130, life: 0.25, size: 3, glow: true });
       if (this === game.player) { SFX.attackMelee(); addShake(1.5); }
       else if (t === game.player) SFX.hit();
     }
@@ -126,6 +130,7 @@ export class Unit {
     // 쿨다운
     if (this.attackCd > 0) this.attackCd -= dt;
     if (this.attackAnim > 0) this.attackAnim -= dt;
+    if (this.hitFlash > 0) this.hitFlash -= dt;
 
     // 타겟 추적 / 공격
     this.moving = false;
@@ -278,6 +283,11 @@ export class Hero extends Unit {
   die(game) {
     this.dead = true;
     this.deaths++;
+    // 시체 페이드아웃
+    const img = loadImg(UNIT[this.team === 'red' ? `shadow_${this.champ.id}` : this.champ.id]);
+    if (imgReady(img)) {
+      spawnCorpse(img, this.x, this.y - this.radius * 0.75, this.radius * 4.3, Math.cos(this.facing) < 0, 1.1);
+    }
     // 후반으로 갈수록 죽음의 비용이 커진다 (LOL과 동일한 게임 종결 장치)
     this.respawnT = 7 + this.level * 1.35 + Math.min(16, game.time / 75);
     this.target = null; this.moveTarget = null;
@@ -330,6 +340,14 @@ export class Hero extends Unit {
     }
 
     this.updateBase(dt, game);
+
+    // 걷기 먼지
+    if (this.moving && Math.random() < dt * 7) {
+      spawnParticles({
+        x: this.x + (Math.random() - 0.5) * 10, y: this.y + this.radius * 0.5,
+        count: 1, color: 'rgba(140,125,95,0.5)', speed: 22, life: 0.5, size: 4.5, gravity: -18,
+      });
+    }
   }
 
   draw(ctx, game) {
@@ -383,6 +401,15 @@ export class Hero extends Unit {
       ctx.rotate(wobble);
       if (Math.cos(this.facing) < 0) ctx.scale(-1, 1); // 이동 방향 반전
       ctx.drawImage(sprite, -d / 2, -d / 2, d, d);
+      // 피격 화이트 플래시
+      if (this.hitFlash > 0) {
+        const fv = getSpriteVariant(UNIT[unitKey], 'flash');
+        if (fv) {
+          ctx.globalAlpha = (this.hitFlash / 0.13) * 0.75;
+          ctx.drawImage(fv, -d / 2, -d / 2, d, d);
+          ctx.globalAlpha = 1;
+        }
+      }
       ctx.restore();
     } else {
       // 폴백: 초상 토큰
@@ -511,6 +538,13 @@ export class Minion extends Unit {
       // 캐스터는 살짝 보라 톤, 대포는 크게
       if (this.type === 'caster') ctx.globalAlpha = 0.92;
       ctx.drawImage(sprite, -d / 2, -d / 2, d, d);
+      if (this.hitFlash > 0) {
+        const fv = getSpriteVariant(UNIT[this.team === 'blue' ? 'minion_blue' : 'minion_red'], 'flash');
+        if (fv) {
+          ctx.globalAlpha = (this.hitFlash / 0.13) * 0.75;
+          ctx.drawImage(fv, -d / 2, -d / 2, d, d);
+        }
+      }
       ctx.restore();
       ctx.globalAlpha = 1;
     } else {
@@ -771,6 +805,7 @@ export class Monster extends Unit {
     if (this.dead) return;
     if (this.attackCd > 0) this.attackCd -= dt;
     if (this.attackAnim > 0) this.attackAnim -= dt;
+    if (this.hitFlash > 0) this.hitFlash -= dt;
 
     // 리시 (너무 멀어지면 복귀 + 완전 회복)
     if (dist(this.x, this.y, this.home.x, this.home.y) > this.leashRange || (this.target && this.target.dead)) {
@@ -823,6 +858,14 @@ export class Monster extends Unit {
       ctx.translate(this.x, this.y + bob);
       if (Math.cos(this.facing) < 0) ctx.scale(-1, 1); // 이동 방향 따라 좌우 반전
       ctx.drawImage(sprite, -d / 2, -d / 2 - r * 0.35, d, d);
+      if (this.hitFlash > 0) {
+        const fv = getSpriteVariant(MON[this.def.id], 'flash');
+        if (fv) {
+          ctx.globalAlpha = (this.hitFlash / 0.13) * 0.7;
+          ctx.drawImage(fv, -d / 2, -d / 2 - r * 0.35, d, d);
+          ctx.globalAlpha = 1;
+        }
+      }
       ctx.restore();
     } else {
       // 폴백: 그라디언트 원

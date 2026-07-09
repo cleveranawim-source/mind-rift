@@ -255,22 +255,27 @@ function drawMinimap(ctx, game) {
   ctx.fillStyle = '#101f16';
   ctx.fillRect(x, y, s, s);
 
-  // 라인
-  ctx.strokeStyle = 'rgba(200,185,120,0.3)';
-  ctx.lineWidth = 3;
-  for (const pts of Object.values(LANES)) {
+  // 실제 지형 축소판
+  if (game.terrain) {
+    ctx.drawImage(game.terrain, x, y, s, s);
+    ctx.fillStyle = 'rgba(6,12,8,0.25)';
+    ctx.fillRect(x, y, s, s);
+  } else {
+    ctx.strokeStyle = 'rgba(200,185,120,0.3)';
+    ctx.lineWidth = 3;
+    for (const pts of Object.values(LANES)) {
+      ctx.beginPath();
+      ctx.moveTo(x + pts[0][0] * k, y + pts[0][1] * k);
+      for (const [wx, wy] of pts) ctx.lineTo(x + wx * k, y + wy * k);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(64,181,208,0.35)';
+    ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(x + pts[0][0] * k, y + pts[0][1] * k);
-    for (const [wx, wy] of pts) ctx.lineTo(x + wx * k, y + wy * k);
+    ctx.moveTo(x + 880 * k, y + 880 * k);
+    ctx.lineTo(x + 2320 * k, y + 2320 * k);
     ctx.stroke();
   }
-  // 강
-  ctx.strokeStyle = 'rgba(64,181,208,0.35)';
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.moveTo(x + 880 * k, y + 880 * k);
-  ctx.lineTo(x + 2320 * k, y + 2320 * k);
-  ctx.stroke();
 
   // 타워
   for (const t of game.towers) {

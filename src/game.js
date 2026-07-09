@@ -7,10 +7,10 @@ import { updateProjectiles, drawProjectiles, updateTelegraphs, drawTelegraphs, p
 import { castAbility } from './combat/abilities.js';
 import { updateHeroAI, updateMinionAI } from './ai/ai.js';
 import { SelSystem } from './sel/sel.js';
-import { updateFX, drawFX, drawFloaters, clearFX, shake, spawnParticles, spawnRing, spawnFloater, addShake } from './fx/fx.js';
+import { updateFX, drawFX, drawUnderFX, drawFloaters, clearFX, shake, spawnParticles, spawnRing, spawnFloater, spawnCorpse, addShake } from './fx/fx.js';
 import { drawHUD, drawWorldPings, pingWheelSelection, minimapRect } from './ui/hud.js';
 import { SFX, startMusic, stopMusic } from './audio/audio.js';
-import { envReady } from './ui/assets.js';
+import { envReady, UNIT, MON, loadImg, imgReady } from './ui/assets.js';
 
 export class Game {
   constructor(canvas, playerChampId, callbacks = {}) {
@@ -34,6 +34,13 @@ export class Game {
         s: 14 + Math.random() * 22,
         ph: Math.random() * Math.PI * 2,
       });
+    }
+    // 강물 반짝임 (y=x 대각선 강 위)
+    this.riverSparks = [];
+    for (let i = 0; i < 44; i++) {
+      const t = 900 + Math.random() * 1400;
+      const off = (Math.random() - 0.5) * 200;
+      this.riverSparks.push({ x: t + off * 0.707, y: t - off * 0.707, ph: Math.random() * Math.PI * 2, sp: 8 + Math.random() * 14 });
     }
 
     // ── 유닛 생성 ──
@@ -275,7 +282,9 @@ export class Game {
 
     if (unit.isMinion) {
       unit.dead = true;
-      spawnParticles({ x: unit.x, y: unit.y, count: 8, color: unit.team === 'blue' ? '#6aa8e8' : '#e87a6a', speed: 90, life: 0.4, size: 3 });
+      const mImg = loadImg(UNIT[unit.team === 'blue' ? 'minion_blue' : 'minion_red']);
+      if (imgReady(mImg)) spawnCorpse(mImg, unit.x, unit.y - unit.radius * 0.6, unit.radius * 3.1, Math.cos(unit.facing) < 0, 0.7);
+      spawnParticles({ x: unit.x, y: unit.y, count: 8, color: unit.team === 'blue' ? '#6aa8e8' : '#e87a6a', speed: 90, life: 0.4, size: 3, glow: true });
       if (srcHero) {
         srcHero.addGold(unit.gold, this);
         srcHero.cs++;
@@ -369,7 +378,9 @@ export class Game {
 
     if (unit.isMonster) {
       unit.dead = true;
-      spawnParticles({ x: unit.x, y: unit.y, count: 16, color: '#c8a44a', speed: 160, life: 0.6, size: 4 });
+      const moImg = unit.def.id ? loadImg(MON[unit.def.id]) : null;
+      if (moImg && imgReady(moImg)) spawnCorpse(moImg, unit.x, unit.y - unit.radius * 0.35, unit.radius * 3.1, Math.cos(unit.facing) < 0, 0.9);
+      spawnParticles({ x: unit.x, y: unit.y, count: 16, color: '#c8a44a', speed: 160, life: 0.6, size: 4, glow: true });
       if (srcHero) {
         srcHero.addGold(unit.def.gold, this);
         srcHero.addXp(unit.def.xp, this);
@@ -600,6 +611,9 @@ export class Game {
     // 지형
     ctx.drawImage(this.terrain, 0, 0, WORLD, WORLD);
 
+    // 바닥 레이어: 데칼·시체·잔상
+    drawUnderFX(ctx);
+
     // 장판 예고
     drawTelegraphs(ctx, this);
     // 월드 핑
@@ -619,26 +633,51 @@ export class Game {
     drawFX(ctx);
     drawFloaters(ctx);
 
-    // 앰비언트 반딧불 (뷰포트 내에서만)
+    // 앰비언트 반딧불 + 강 반짝임 (뷰포트 내, 가산 발광)
     const vx0 = this.cam.x - 50, vy0 = this.cam.y - 50;
     const vx1 = this.cam.x + this.vw / this.zoom + 50, vy1 = this.cam.y + this.vh / this.zoom + 50;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     for (const f of this.fireflies) {
       if (f.x < vx0 || f.x > vx1 || f.y < vy0 || f.y > vy1) continue;
       const tw = 0.35 + Math.sin(this.time * 2.2 + f.ph) * 0.3;
       const fy = f.y + Math.sin(this.time * 1.4 + f.ph) * 6;
-      ctx.globalAlpha = Math.max(0, tw) * 0.35;
+      ctx.globalAlpha = Math.max(0, tw) * 0.3;
       ctx.fillStyle = '#3fe5a0';
       ctx.beginPath(); ctx.arc(f.x, fy, 6.5, 0, TAU); ctx.fill();
       ctx.globalAlpha = Math.max(0, tw);
       ctx.fillStyle = '#b8ffe0';
       ctx.beginPath(); ctx.arc(f.x, fy, 2.4, 0, TAU); ctx.fill();
     }
+    for (const s of this.riverSparks) {
+      if (s.x < vx0 || s.x > vx1 || s.y < vy0 || s.y > vy1) continue;
+      const tw = Math.max(0, Math.sin(this.time * s.sp * 0.22 + s.ph));
+      const drift = Math.sin(this.time * 0.5 + s.ph) * 26;
+      const sx = s.x + drift * 0.707, sy = s.y + drift * 0.707;
+      ctx.globalAlpha = tw * 0.35;
+      ctx.fillStyle = '#5adfff';
+      ctx.beginPath(); ctx.arc(sx, sy, 5.5, 0, TAU); ctx.fill();
+      ctx.globalAlpha = tw * 0.9;
+      ctx.fillStyle = '#d8f8ff';
+      ctx.beginPath(); ctx.arc(sx, sy, 1.8, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
     ctx.globalAlpha = 1;
 
     // 전장의 안개
     this.renderFog(ctx);
 
     ctx.restore();
+
+    // 시네마틱 비네트 (스크린 좌표)
+    if (!this._vignette || this._vignette.w !== this.vw) {
+      const grad = ctx.createRadialGradient(this.vw / 2, this.vh / 2, Math.min(this.vw, this.vh) * 0.42, this.vw / 2, this.vh / 2, Math.max(this.vw, this.vh) * 0.75);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(2,6,4,0.42)');
+      this._vignette = { grad, w: this.vw };
+    }
+    ctx.fillStyle = this._vignette.grad;
+    ctx.fillRect(0, 0, this.vw, this.vh);
 
     // HUD (스크린 좌표)
     drawHUD(ctx, this);

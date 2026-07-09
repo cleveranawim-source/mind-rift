@@ -1,8 +1,24 @@
 // ─── 전투 코어: 데미지 · 투사체 · 스킬 시스템 ───
 import { dist, norm, angleTo, TAU, clamp } from '../core/math.js';
-import { spawnParticles, spawnRing, spawnFloater, spawnBeam, addShake } from '../fx/fx.js';
+import { spawnParticles, spawnRing, spawnFloater, spawnBeam, spawnDecal, spawnAfterimage, addShake } from '../fx/fx.js';
 import { SFX } from '../audio/audio.js';
 import { DASH } from '../data/champions.js';
+import { UNIT, loadImg, imgReady } from '../ui/assets.js';
+
+// 영웅의 전신 스프라이트 (잔상용)
+function heroSprite(hero) {
+  const img = loadImg(UNIT[hero.team === 'red' ? `shadow_${hero.champ.id}` : hero.champ.id]);
+  return imgReady(img) ? img : null;
+}
+function dashTrail(hero, fromX, fromY, toX, toY, count = 5) {
+  const img = heroSprite(hero);
+  if (!img) return;
+  const flip = toX < fromX;
+  for (let k = 0; k < count; k++) {
+    const t = k / count;
+    spawnAfterimage(img, fromX + (toX - fromX) * t, fromY + (toY - fromY) * t - hero.radius * 0.75, hero.radius * 4.3, flip, 0.2 + t * 0.22);
+  }
+}
 
 export const projectiles = [];
 export const telegraphs = []; // 장판 예고
@@ -34,6 +50,7 @@ export function dealDamage(target, amount, source, game, { showAlways = false, c
   target.hp -= dmg;
   target.lastDamagedAt = game.time;
   target.lastDamagedBy = source;
+  target.hitFlash = 0.13; // 피격 화이트 플래시
 
   // 어시스트 추적 (영웅만)
   if (target.isHero && source && source.isHero) {
@@ -156,29 +173,59 @@ export function updateProjectiles(dt, game) {
 }
 
 export function drawProjectiles(ctx) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
   for (const p of projectiles) {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle || 0);
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 14;
-    ctx.fillStyle = p.color;
+    const r = p.radius * 0.85;
     if (p.arrow) {
+      // 바람 화살: 긴 빛줄기 + 화살촉
+      const streak = ctx.createLinearGradient(-r * 5.5, 0, 14, 0);
+      streak.addColorStop(0, 'rgba(0,0,0,0)');
+      streak.addColorStop(1, p.color);
+      ctx.strokeStyle = streak;
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-r * 5.5, 0); ctx.lineTo(8, 0); ctx.stroke();
+      ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.moveTo(14, 0); ctx.lineTo(-10, -5); ctx.lineTo(-6, 0); ctx.lineTo(-10, 5);
+      ctx.moveTo(16, 0); ctx.lineTo(-8, -5.5); ctx.lineTo(-4, 0); ctx.lineTo(-8, 5.5);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath();
+      ctx.moveTo(13, 0); ctx.lineTo(-2, -2); ctx.lineTo(-2, 2);
       ctx.closePath(); ctx.fill();
     } else {
+      // 마법구: 외곽 글로우 → 본색 → 백색 코어 3중 레이어
+      const glow = ctx.createRadialGradient(0, 0, r * 0.2, 0, 0, r * 2.6);
+      glow.addColorStop(0, p.color);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(0, 0, r * 2.6, 0, TAU); ctx.fill();
+      // 꼬리
+      const tail = ctx.createLinearGradient(-r * 4.5, 0, 0, 0);
+      tail.addColorStop(0, 'rgba(0,0,0,0)');
+      tail.addColorStop(1, p.color);
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = tail;
       ctx.beginPath();
-      ctx.arc(0, 0, p.radius * 0.8, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.beginPath();
-      ctx.arc(2, 0, p.radius * 0.35, 0, TAU);
-      ctx.fill();
+      ctx.moveTo(-r * 4.5, 0);
+      ctx.quadraticCurveTo(-r * 1.6, -r * 0.9, 0, -r * 0.75);
+      ctx.lineTo(0, r * 0.75);
+      ctx.quadraticCurveTo(-r * 1.6, r * 0.9, -r * 4.5, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.beginPath(); ctx.arc(r * 0.15, 0, r * 0.45, 0, TAU); ctx.fill();
     }
     ctx.restore();
   }
-  ctx.shadowBlur = 0;
+  ctx.restore();
 }
 
 // ─── 장판 (예고 후 폭발) ───
@@ -194,9 +241,12 @@ export function updateTelegraphs(dt, game) {
           dealDamage(u, t.dmg, t.source, game);
         }
       }
-      spawnParticles({ x: t.x, y: t.y, count: 26, color: t.color, speed: 260, life: 0.5, size: 5, glow: true });
-      spawnRing(t.x, t.y, t.color, t.radius, 0.45);
-      if (t.source === game.player || dist(t.x, t.y, game.player.x, game.player.y) < 600) addShake(5);
+      spawnParticles({ x: t.x, y: t.y, count: 30, color: t.color, speed: 280, life: 0.55, size: 5, glow: true });
+      spawnParticles({ x: t.x, y: t.y, count: 10, color: '#ffffff', speed: 160, life: 0.3, size: 3, glow: true });
+      spawnRing(t.x, t.y, t.color, t.radius, 0.5);
+      spawnRing(t.x, t.y, '#ffffff', t.radius * 0.5, 0.3);
+      spawnDecal(t.x, t.y, t.radius * 0.6, 'rgba(25,12,8,0.5)', 6);
+      if (t.source === game.player || dist(t.x, t.y, game.player.x, game.player.y) < 600) addShake(6);
       SFX.abilityW();
       telegraphs.splice(i, 1);
     }
@@ -206,11 +256,23 @@ export function updateTelegraphs(dt, game) {
 export function drawTelegraphs(ctx, game) {
   for (const t of telegraphs) {
     const prog = clamp(t.t / t.delay, 0, 1);
-    ctx.globalAlpha = 0.35;
+    // 룬 서클: 반대 방향으로 도는 이중 점선 링
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    ctx.globalAlpha = 0.5;
     ctx.strokeStyle = t.color;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(t.x, t.y, t.radius, 0, TAU); ctx.stroke();
-    ctx.globalAlpha = 0.22;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([14, 10]);
+    ctx.rotate(game.time * 1.4);
+    ctx.beginPath(); ctx.arc(0, 0, t.radius, 0, TAU); ctx.stroke();
+    ctx.rotate(-game.time * 2.8);
+    ctx.setLineDash([6, 12]);
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath(); ctx.arc(0, 0, t.radius * 0.72, 0, TAU); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    // 채워지는 코어
+    ctx.globalAlpha = 0.20;
     ctx.fillStyle = t.color;
     ctx.beginPath(); ctx.arc(t.x, t.y, t.radius * prog, 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
@@ -242,9 +304,13 @@ export function castAbility(hero, slot, game, aim) {
           hitAny = true;
         }
       }
+      // 대지 강타: 이중 충격파 + 흙먼지 파편 + 바닥 균열
       spawnRing(hero.x, hero.y, hero.color, def.radius, 0.5);
-      spawnParticles({ x: hero.x, y: hero.y, count: 20, color: hero.color, speed: 300, life: 0.4, size: 4 });
-      if (hero === game.player) addShake(hitAny ? 6 : 3);
+      spawnRing(hero.x, hero.y, '#fff2d0', def.radius * 0.55, 0.35);
+      spawnParticles({ x: hero.x, y: hero.y, count: 22, color: hero.color, speed: 320, life: 0.45, size: 4, glow: true });
+      spawnParticles({ x: hero.x, y: hero.y, count: 14, color: '#8a6f4a', speed: 220, life: 0.7, size: 5, gravity: 240 });
+      spawnDecal(hero.x, hero.y, def.radius * 0.55, 'rgba(30,22,12,0.45)', 5);
+      if (hero === game.player) addShake(hitAny ? 7 : 3);
       SFX.abilityQ();
       break;
     }
@@ -260,9 +326,11 @@ export function castAbility(hero, slot, game, aim) {
       enemies.sort((a, b) => (b.isHero ? 1 : 0) - (a.isHero ? 1 : 0) || dist(hero.x, hero.y, a.x, a.y) - dist(hero.x, hero.y, b.x, b.y));
       const t = enemies[0];
       spawnBeam(hero.x, hero.y, t.x, t.y, hero.color, 0.3, 4);
+      const sx0 = hero.x, sy0 = hero.y;
       const a = angleTo(t.x, t.y, hero.x, hero.y);
       hero.x = t.x + Math.cos(a) * (t.radius + hero.radius + 5);
       hero.y = t.y + Math.sin(a) * (t.radius + hero.radius + 5);
+      dashTrail(hero, sx0, sy0, hero.x, hero.y, 5);
       dealDamage(t, scale(def.dmg, def.dmgPerLv), hero, game);
       spawnParticles({ x: t.x, y: t.y, count: 14, color: hero.color, speed: 200, life: 0.4, size: 4, glow: true });
       hero.target = t;
@@ -279,6 +347,8 @@ export function castAbility(hero, slot, game, aim) {
     }
     case 'skillshot': {
       const [dx, dy] = norm(aim.x - hero.x, aim.y - hero.y);
+      // 머즐 플래시
+      spawnParticles({ x: hero.x + dx * hero.radius * 1.4, y: hero.y + dy * hero.radius * 1.4, count: 8, color: hero.color, speed: 130, life: 0.25, size: 3.5, glow: true, angle: Math.atan2(dy, dx), spread: 1.1 });
       spawnProjectile({
         x: hero.x + dx * hero.radius, y: hero.y + dy * hero.radius,
         dx, dy, speed: def.speed, maxDist: def.range,
@@ -345,6 +415,7 @@ export function castAbility(hero, slot, game, aim) {
       const sx = hero.x, sy = hero.y;
       hero.x += dx * DASH.dist;
       hero.y += dy * DASH.dist;
+      dashTrail(hero, sx, sy, hero.x, hero.y, 6);
       for (let k = 0; k < 8; k++) {
         spawnParticles({
           x: sx + dx * DASH.dist * (k / 8), y: sy + dy * DASH.dist * (k / 8),

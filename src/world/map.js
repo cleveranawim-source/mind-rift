@@ -390,5 +390,33 @@ export function renderTerrain() {
   g.lineWidth = 6;
   g.strokeRect(120, 120, WORLD - 240, WORLD - 240);
 
+  // 광원 웅덩이 베이크 (가산 발광 — 분위기 라이팅)
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  const pool = (x, y, r, color, a) => {
+    const gr = g.createRadialGradient(x, y, r * 0.1, x, y, r);
+    gr.addColorStop(0, color.replace('A', a));
+    gr.addColorStop(1, color.replace('A', 0));
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+  };
+  // 강을 따라 시안 글로우
+  for (let i = 0; i <= 4; i++) {
+    const t = 950 + (2250 - 950) * (i / 4);
+    pool(t, t, 420, 'rgba(70,200,230,A)', 0.10);
+  }
+  // 오브젝트 웅덩이
+  pool(SPIRIT_DEF.x, SPIRIT_DEF.y, 300, 'rgba(122,232,208,A)', 0.14);
+  pool(SAGE_DEF.x, SAGE_DEF.y, 300, 'rgba(176,138,232,A)', 0.14);
+  // 기지 광원
+  pool(NEXUS_POS.blue.x, NEXUS_POS.blue.y, 480, 'rgba(80,140,255,A)', 0.12);
+  pool(NEXUS_POS.red.x, NEXUS_POS.red.y, 480, 'rgba(255,90,70,A)', 0.12);
+  // 버프 캠프 은은한 색
+  for (const c of CAMP_DEFS) {
+    if (c.buff === 'calm') pool(c.x, c.y, 220, 'rgba(90,160,220,A)', 0.09);
+    if (c.buff === 'focus') pool(c.x, c.y, 220, 'rgba(220,110,160,A)', 0.09);
+  }
+  g.restore();
+
   return cv;
 }
