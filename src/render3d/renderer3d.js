@@ -2,9 +2,27 @@
 // 게임 로직은 2D 좌표(x, y)를 그대로 쓰고, 여기서 XZ 평면(x→x, y→z)에 투영한다.
 // 카메라는 LOL처럼 ~54° 기울어진 시점. 유닛은 빌보드 스프라이트(HD-2.5D).
 import * as THREE from 'three';
-import { WORLD, NEXUS_POS } from '../world/map.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { WORLD, NEXUS_POS, WALLS } from '../world/map.js';
 import { ENV, MON, UNIT, loadImg } from '../ui/assets.js';
 import { shake } from '../fx/fx.js';
+
+// 리깅된 3D 캐릭터 모델 (존재하는 것만 로드, 없으면 빌보드 폴백)
+const MODEL_URLS = {
+  flame: './assets/models/unit_flame.glb',
+  guardian: './assets/models/unit_guardian.glb',
+  fox: './assets/models/unit_fox.glb',
+  gale: './assets/models/unit_gale.glb',
+  moon: './assets/models/unit_moon.glb',
+  shadow_guardian: './assets/models/unit_shadow_guardian.glb',
+  shadow_fox: './assets/models/unit_shadow_fox.glb',
+  shadow_flame: './assets/models/unit_shadow_flame.glb',
+  shadow_gale: './assets/models/unit_shadow_gale.glb',
+  shadow_moon: './assets/models/unit_shadow_moon.glb',
+};
+const MODEL_HEIGHT = 96; // 영웅 목표 신장 (월드 px)
 
 const CAM_H = 820;   // 카메라 높이
 const CAM_D = 580;   // 카메라 뒤 거리 (기울기 결정)
@@ -36,6 +54,15 @@ export class Renderer3D {
     this.scene.add(ground);
     this.ground = ground;
 
+    // 맵 밖 스커트 지면 (검은 공허 방지)
+    const skirt = new THREE.Mesh(
+      new THREE.PlaneGeometry(WORLD * 4, WORLD * 4),
+      new THREE.MeshBasicMaterial({ color: 0x08120c })
+    );
+    skirt.rotation.x = -Math.PI / 2;
+    skirt.position.set(WORLD / 2, -2, WORLD / 2);
+    this.scene.add(skirt);
+
     // ── 전장의 안개 (지면 정렬, 항상 위에 그림) ──
     this.fogTex = new THREE.CanvasTexture(fogCanvas);
     this.fogPlane = new THREE.Mesh(
@@ -66,16 +93,95 @@ export class Renderer3D {
       this.nexusMeshes[team] = mesh;
     }
 
+    // ── 조명 (GLB 모델용 — Basic 재질 지형에는 영향 없음) ──
+    this.scene.add(new THREE.HemisphereLight(0xbfe8d0, 0x1a2a20, 1.35));
+    const sun = new THREE.DirectionalLight(0xfff2dc, 1.6);
+    sun.position.set(-600, 1200, 400);
+    this.scene.add(sun);
+    // PBR 재질용 환경맵 (IBL) — 없으면 Meshy 모델이 시커멓게 나옴
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.85;
+
+    // ── 3D 숲 + 절벽 (입체 환경) ──
+    this.buildForest();
+    this.buildCliffs();
+
     // 유닛 빌보드 풀: unit.id → { sprite }
     this.pool = new Map();
     // 영웅 발밑 링: unit.id → mesh
     this.rings = new Map();
     this.texCache = new Map();
 
+    // ── 리깅 GLB 캐릭터 ──
+    this.gltfLoader = new GLTFLoader();
+    this.modelLib = new Map();   // key → { scene, clips } | 'loading' | 'missing'
+    this.actors = new Map();     // unit.id → { obj, mixer, action, key }
+
     this._v = new THREE.Vector3();
     this._ray = new THREE.Ray();
     this._plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this._ndc = new THREE.Vector2();
+  }
+
+  // 로우폴리 나무 숲 — 인스턴싱 2 드로콜
+  buildForest() {
+    const trees = [];
+    for (const w of WALLS) {
+      for (const t of w.trees) {
+        trees.push({ x: w.x + t.dx, z: w.y + t.dy, s: t.s });
+      }
+    }
+    const n = trees.length;
+    const coneGeo = new THREE.ConeGeometry(1, 1, 7);
+    const trunkGeo = new THREE.CylinderGeometry(0.13, 0.2, 1, 5);
+    // 언릿 재질 — 페인팅 지형과 톤 일치 (라이트 영향으로 뿌옇게 뜨는 것 방지)
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const trunkMat = new THREE.MeshBasicMaterial({ color: 0x241a10 });
+    const cones = new THREE.InstancedMesh(coneGeo, coneMat, n * 2);
+    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, n);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3();
+    const col = new THREE.Color();
+    let ci = 0;
+    trees.forEach((tr, i) => {
+      const h = tr.s * 3.4;
+      const r = tr.s * 1.5;
+      const lean = (Math.sin(i * 7.3) * 0.05);
+      q.setFromEuler(new THREE.Euler(lean, i * 1.7, 0));
+      // 아래 콘 (몸통 숲)
+      m.compose(up.set(tr.x, h * 0.42, tr.z), q, new THREE.Vector3(r, h * 0.6, r));
+      cones.setMatrixAt(ci, m);
+      col.setHSL(0.38 + Math.sin(i * 3.1) * 0.045, 0.45, 0.10 + (i % 5) * 0.011);
+      cones.setColorAt(ci++, col);
+      // 위 콘
+      m.compose(up.set(tr.x, h * 0.74, tr.z), q, new THREE.Vector3(r * 0.66, h * 0.48, r * 0.66));
+      cones.setMatrixAt(ci, m);
+      col.offsetHSL(0.012, 0.04, 0.022);
+      cones.setColorAt(ci++, col);
+      // 줄기
+      m.compose(up.set(tr.x, h * 0.16, tr.z), new THREE.Quaternion(), new THREE.Vector3(tr.s, h * 0.34, tr.s));
+      trunks.setMatrixAt(i, m);
+    });
+    cones.instanceMatrix.needsUpdate = true;
+    if (cones.instanceColor) cones.instanceColor.needsUpdate = true;
+    this.scene.add(cones, trunks);
+  }
+
+  // 맵 가장자리 절벽 — 카메라가 남쪽에서 보므로 남쪽은 낮게, 나머지는 적당히
+  buildCliffs() {
+    const mat = new THREE.MeshLambertMaterial({ color: 0x0a1410 });
+    const T = 260;
+    const mk = (w, d, x, z, H) => {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(w, H, d), mat);
+      box.position.set(x, H / 2 - 6, z);
+      this.scene.add(box);
+    };
+    mk(WORLD + T * 2, T, WORLD / 2, -T / 2 + 40, 120);          // 북 (원경 — 높아도 안 가림)
+    mk(WORLD + T * 2, T, WORLD / 2, WORLD + T / 2 - 40, 14);    // 남 (근경 — 낮은 턱만)
+    mk(T, WORLD + T * 2, -T / 2 + 40, WORLD / 2, 60);           // 서
+    mk(T, WORLD + T * 2, WORLD + T / 2 - 40, WORLD / 2, 60);    // 동
   }
 
   makeGlowSprite(color) {
@@ -89,6 +195,62 @@ export class Renderer3D {
     g.fillRect(0, 0, 128, 128);
     const tex = new THREE.CanvasTexture(cv);
     return new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
+  }
+
+  // ── GLB 모델 로드 (1회) ──
+  loadModel(key) {
+    const cached = this.modelLib.get(key);
+    if (cached) return cached;
+    this.modelLib.set(key, 'loading');
+    this.gltfLoader.load(
+      MODEL_URLS[key],
+      (gltf) => {
+        // 금속성 과다 보정 (환경맵 없이도 살 수 있게)
+        gltf.scene.traverse((n) => {
+          if (n.isMesh && n.material) {
+            if (n.material.metalness !== undefined) n.material.metalness = Math.min(n.material.metalness, 0.35);
+            if (n.material.roughness !== undefined) n.material.roughness = Math.max(n.material.roughness, 0.55);
+          }
+        });
+        const box = new THREE.Box3().setFromObject(gltf.scene);
+        const h = Math.max(0.001, box.max.y - box.min.y);
+        const scale = MODEL_HEIGHT / h;
+        this.modelLib.set(key, { scene: gltf.scene, clips: gltf.animations, scale, yOff: -box.min.y * scale });
+      },
+      undefined,
+      () => this.modelLib.set(key, 'missing')
+    );
+    return 'loading';
+  }
+
+  // ── 유닛별 액터 인스턴스 (스켈레톤 복제 + 애니메이션 믹서) ──
+  getActor(id, key) {
+    let a = this.actors.get(id);
+    if (a && a.key === key) return a;
+    const lib = this.loadModel(key);
+    if (lib === 'loading' || lib === 'missing') return null;
+    if (a) this.scene.remove(a.obj);
+    const obj = SkeletonUtils.clone(lib.scene);
+    obj.scale.setScalar(lib.scale);
+    // 재질 복제 (피격 플래시가 서로 간섭하지 않게) + 발광 슬롯 수집
+    const mats = [];
+    obj.traverse((n) => {
+      if (n.isMesh && n.material) {
+        n.material = n.material.clone();
+        n.frustumCulled = false; // 스킨 메시 컬링 버그 방지
+        mats.push(n.material);
+      }
+    });
+    const mixer = new THREE.AnimationMixer(obj);
+    let action = null;
+    if (lib.clips && lib.clips.length) {
+      action = mixer.clipAction(lib.clips[0]);
+      action.play();
+    }
+    this.scene.add(obj);
+    a = { obj, mixer, action, key, yOff: lib.yOff, mats };
+    this.actors.set(id, a);
+    return a;
   }
 
   getTexture(src) {
@@ -195,6 +357,8 @@ export class Renderer3D {
 
   // ── 프레임 렌더 ──
   render(game) {
+    if (!this.clock) this.clock = new THREE.Clock();
+    const dt = Math.min(this.clock.getDelta(), 0.05) * game.timescale;
     const p = game.player;
     // 카메라 추적 (부드럽게) + 셰이크
     this.camTarget.lerp(new THREE.Vector3(p.x, 0, p.y), 0.12);
@@ -209,16 +373,47 @@ export class Renderer3D {
     // 풀 리셋 플래그
     for (const e of this.pool.values()) e.used = false;
     for (const r of this.rings.values()) r.used = false;
+    for (const a of this.actors.values()) a.used = false;
 
     const t = game.time;
 
-    // 영웅
+    // 영웅 — 리깅 GLB 우선, 없으면 빌보드 폴백
     for (const h of game.heroes) {
       if (h.dead || !game.isVisible(h)) continue;
-      const key = UNIT[h.team === 'red' ? `shadow_${h.champ.id}` : h.champ.id];
-      const d = h.radius * 4.6;
-      const bob = h.moving ? Math.abs(Math.sin(t * 9 + h.id)) * 6 : Math.sin(t * 2 + h.id) * 2;
-      this.syncSprite(key, 'h' + h.id, h.x, h.y, d * 0.44 + bob, d, Math.cos(h.facing) < 0);
+      const modelKey = h.team === 'red' ? `shadow_${h.champ.id}` : h.champ.id;
+      const actor = MODEL_URLS[modelKey] ? this.getActor('h' + h.id, modelKey) : null;
+      if (actor) {
+        actor.used = true;
+        actor.obj.visible = true;
+        actor.obj.position.set(h.x, actor.yOff, h.y);
+        // 이동 방향으로 몸 회전 (부드럽게)
+        const targetYaw = Math.PI / 2 - h.facing;
+        let dy = targetYaw - actor.obj.rotation.y;
+        while (dy > Math.PI) dy -= Math.PI * 2;
+        while (dy < -Math.PI) dy += Math.PI * 2;
+        actor.obj.rotation.y += dy * Math.min(1, dt * 10);
+        // 걷기 클립: 이동 시 재생, 정지 시 느린 숨쉬기
+        if (actor.action) {
+          actor.action.timeScale = h.moving ? 1.35 : 0.1;
+        } else {
+          // 클립 없는 모델(여우 등): 절차적 모션 — 통통 걸음 + 몸 흔들기
+          actor.obj.position.y = actor.yOff
+            + Math.sin(t * 2.4 + h.id) * 2
+            + (h.moving ? Math.abs(Math.sin(t * 10 + h.id)) * 5 : 0);
+          actor.obj.rotation.z = h.moving ? Math.sin(t * 10 + h.id) * 0.07 : Math.sin(t * 1.5 + h.id) * 0.02;
+        }
+        actor.mixer.update(dt);
+        // 피격 발광 플래시
+        const flash = Math.max(0, h.hitFlash || 0) / 0.13;
+        for (const m of actor.mats) {
+          if (m.emissive) m.emissive.setScalar(flash * 0.85);
+        }
+      } else {
+        const key = UNIT[modelKey];
+        const d = h.radius * 4.6;
+        const bob = h.moving ? Math.abs(Math.sin(t * 9 + h.id)) * 6 : Math.sin(t * 2 + h.id) * 2;
+        this.syncSprite(key, 'h' + h.id, h.x, h.y, d * 0.44 + bob, d, Math.cos(h.facing) < 0);
+      }
       this.syncRing('h' + h.id, h.x, h.y, h.radius * 1.5, h.isPlayer ? 0x3fe5a0 : (h.team === 'blue' ? 0x4a9eff : 0xff5555));
     }
     // 미니언
@@ -263,6 +458,7 @@ export class Renderer3D {
     // 안 쓴 풀 항목 숨김
     for (const e of this.pool.values()) if (!e.used) e.sprite.visible = false;
     for (const r of this.rings.values()) if (!r.used) r.visible = false;
+    for (const a of this.actors.values()) if (!a.used) a.obj.visible = false;
 
     this.fogTex.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
