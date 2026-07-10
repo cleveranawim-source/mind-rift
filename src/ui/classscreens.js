@@ -14,6 +14,11 @@ function stopWatch() { if (unwatch) { unwatch(); unwatch = null; } }
 const AREA_KEYS = ['자기', '마음건강', '대인관계', '공동체'];
 const AREA_COLORS = { 자기: '#e8a33d', 마음건강: '#9b6dff', 대인관계: '#ffd93d', 공동체: '#4ad1e8' };
 
+// 45초간 신호 없으면 이탈로 간주 (경기 중 + 미완료)
+function isGone(p, room) {
+  return room.status === 'playing' && !p.done && Date.now() - (p.seen || 0) > 45000;
+}
+
 // ═══ 학생: 입장 화면 ═══
 export function showClassJoin(onEnterLobby, onBack) {
   stopWatch();
@@ -175,24 +180,26 @@ export function showClassResult(ctx, onRestart) {
 
   unwatch = watchRoom(ctx.code, (room) => {
     const players = Object.values(room.players || {});
-    const doneCount = players.filter((p) => p.done).length;
+    const active = players.filter((p) => !isGone(p, room)); // 이탈자 집계 제외
+    const doneCount = active.filter((p) => p.done).length;
     const rows = players.map((p) => {
       const champ = p.champ ? champById(p.champ) : null;
+      const state = p.done ? (p.win ? '🏆 승리' : '🌧 패배') : isGone(p, room) ? '⚠️ 연결 끊김' : '⚔ 전투 중';
       return `<div class="cr-row">
         ${champ ? `<img src="${champArt(champ.id)}" alt="" />` : ''}
         <b>${p.name}</b>
-        <span class="cr-stat">${p.done ? (p.win ? '🏆 승리' : '🌧 패배') : '⚔ 전투 중'}</span>
+        <span class="cr-stat">${state}</span>
         <span class="cr-stat">${p.k}/${p.d}/${p.a}</span>
         <span class="cr-stat">🌬${p.breaths} 💚${p.praises}</span>
       </div>`;
     }).join('');
 
     let summary = '';
-    if (doneCount === players.length && players.length > 0) {
+    if (doneCount === active.length && doneCount > 0) {
       // 반 평균 SEL
       const avg = {};
       for (const k of AREA_KEYS) {
-        const vals = players.filter((p) => p.ref).map((p) => p.ref[k] || 0);
+        const vals = active.filter((p) => p.ref).map((p) => p.ref[k] || 0);
         avg[k] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
       }
       summary = `<div class="lobby-label" style="margin-top:16px">우리 팀 마음 리포트 (평균)</div>` +
@@ -205,7 +212,7 @@ export function showClassResult(ctx, onRestart) {
     }
     document.getElementById('cr-body').innerHTML =
       `<div class="cr-list">${rows}</div>${summary}
-       <p class="class-sub" style="margin-top:12px">${doneCount}/${players.length}명 완료 · 팀 사기 ${Math.round(room.morale)}</p>`;
+       <p class="class-sub" style="margin-top:12px">${doneCount}/${active.length}명 완료 · 팀 사기 ${Math.round(Math.max(0, Math.min(100, room.morale)))}</p>`;
   });
 
   document.getElementById('cr-exit').addEventListener('click', () => {
@@ -285,15 +292,19 @@ function renderDash(code, onBack) {
     }
     // 플레이어 카드
     const players = Object.values(room.players || {});
+    const active = players.filter((p) => !isGone(p, room));
     document.getElementById('td-players').innerHTML = players.map((p) => {
       const champ = p.champ ? champById(p.champ) : null;
       const tiltPct = Math.min(100, p.tilt || 0);
-      return `<div class="td-card">
+      const state = p.done ? (p.win ? '🏆 완료' : '🌧 완료')
+        : isGone(p, room) ? '⚠️ 연결 끊김'
+        : room.status === 'playing' ? '⚔ 전투 중' : '대기';
+      return `<div class="td-card ${isGone(p, room) ? 'gone' : ''}">
         ${champ ? `<img src="${champArt(champ.id)}" alt="" />` : '<div class="lb-noimg">?</div>'}
         <div class="td-info">
           <b>${p.name}</b> <small>Lv${p.lv} · ${p.k}/${p.d}/${p.a}</small>
           <div class="td-tilt"><div style="width:${tiltPct}%"></div></div>
-          <small>🌬${p.breaths} 💚${p.praises} · ${p.done ? (p.win ? '🏆 완료' : '🌧 완료') : room.status === 'playing' ? '⚔ 전투 중' : '대기'}</small>
+          <small>🌬${p.breaths} 💚${p.praises} · ${state}</small>
         </div>
       </div>`;
     }).join('') || '<p class="class-sub">아직 입장한 학생이 없어요</p>';
@@ -304,11 +315,11 @@ function renderDash(code, onBack) {
       `<div class="td-ev ${e.ty}"><b>${e.n}</b> ${e.tx}</div>`
     ).join('') || '<p class="class-sub">경기가 시작되면 소식이 올라와요</p>';
 
-    // 전원 완료 → 반 리포트
-    if (players.length && players.every((p) => p.done)) {
+    // 전원 완료 (이탈자 제외) → 반 리포트
+    if (active.length && active.every((p) => p.done)) {
       const avg = {};
       for (const k of AREA_KEYS) {
-        const vals = players.filter((p) => p.ref).map((p) => p.ref[k] || 0);
+        const vals = active.filter((p) => p.ref).map((p) => p.ref[k] || 0);
         avg[k] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
       }
       document.getElementById('td-summary').innerHTML =

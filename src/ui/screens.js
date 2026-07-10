@@ -47,7 +47,7 @@ export function showTitle(onStart, onClass = null, onTeacher = null) {
 }
 
 // ═══ 챔피언 선택 ═══
-export function showPick(onPick) {
+export function showPick(onPick, onBack = null) {
   const cards = CHAMPIONS.map((c) => {
     const shadow = SHADOWS[c.id];
     return `
@@ -77,6 +77,7 @@ export function showPick(onPick) {
       <p class="pick-sub">각 수호자는 하나의 사회정서 강점을 품고 있다 — 지금 너에게 필요한 힘은?</p>
       <div class="champ-grid">${cards}</div>
       <div class="pick-footer">카드를 클릭하면 바로 협곡에 입장합니다</div>
+      ${onBack ? '<button class="class-back" id="pick-back">← 처음으로</button>' : ''}
     </div>`;
 
   root().querySelectorAll('.champ-card').forEach((card) => {
@@ -85,6 +86,8 @@ export function showPick(onPick) {
       onPick(card.dataset.id);
     });
   });
+  const backBtn = document.getElementById('pick-back');
+  if (backBtn) backBtn.addEventListener('click', () => { SFX.click(); onBack(); });
 }
 
 // ═══ 인게임 상점 ═══

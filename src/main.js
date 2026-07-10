@@ -22,16 +22,33 @@ window.addEventListener('pointerdown', unlockAudio, { once: true });
 window.addEventListener('click', unlockAudio, { once: true });
 window.addEventListener('keydown', unlockAudio, { once: true });
 
+// ── 반 모드 세션 저장 (튕김 복구용) ──
+function saveClassSession(ctx, champId) {
+  localStorage.setItem('rift_session', JSON.stringify({ ...ctx, champId, t: Date.now() }));
+}
+function loadClassSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem('rift_session'));
+    if (s && Date.now() - s.t < 30 * 60 * 1000) return s; // 30분 이내만
+  } catch {}
+  return null;
+}
+function clearClassSession() {
+  localStorage.removeItem('rift_session');
+}
+
 function startGame(champId, classCtx = null) {
   lastChampId = champId;
   clearScreen();
   destroyShop();
   stopClassWatch();
+  if (classCtx) saveClassSession(classCtx, champId);
   if (game) game.destroy();
   game = new Game(canvas, champId, {
     classCtx,
     onEnd: (g) => {
       destroyShop();
+      clearClassSession();
       showEnd(g, (backToTitle) => {
         if (backToTitle) gotoTitle();
         else if (classCtx) gotoClass();
@@ -48,7 +65,7 @@ function gotoPick() {
   if (game) { game.destroy(); game = null; }
   destroyShop();
   startMusic('title');
-  showPick((champId) => startGame(champId));
+  showPick((champId) => startGame(champId), () => gotoTitle());
 }
 
 // ── 반 모드 흐름 ──
@@ -76,6 +93,29 @@ function gotoTitle() {
   showTitle(() => gotoPick(), () => gotoClass(), () => gotoTeacher());
 }
 
+// ── 튕김 복구: 진행 중이던 반 모드 세션 이어하기 ──
+function offerResume(saved) {
+  const bar = document.createElement('div');
+  bar.className = 'resume-bar';
+  bar.innerHTML = `
+    <span>🔄 진행 중이던 반 모드 경기가 있어요 (방 ${saved.code}, ${saved.name})</span>
+    <button class="btn-primary sm" id="rs-yes">이어서 참가</button>
+    <button class="btn-ghost sm" id="rs-no">버리기</button>`;
+  document.body.appendChild(bar);
+  document.getElementById('rs-yes').addEventListener('click', () => {
+    bar.remove();
+    startGame(saved.champId, { code: saved.code, playerId: saved.playerId, name: saved.name });
+  });
+  document.getElementById('rs-no').addEventListener('click', () => {
+    clearClassSession();
+    bar.remove();
+  });
+}
+
 // 교사용 바로가기: index.html#teacher
 if (location.hash === '#teacher') gotoTeacher();
-else showTitle(() => gotoPick(), () => gotoClass(), () => gotoTeacher());
+else {
+  showTitle(() => gotoPick(), () => gotoClass(), () => gotoTeacher());
+  const saved = loadClassSession();
+  if (saved) offerResume(saved);
+}
