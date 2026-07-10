@@ -100,55 +100,256 @@ export const SFX = {
   buff() { tone({ freq: 660, freqEnd: 1320, type: 'sine', dur: 0.4, vol: 0.1 }); },
 };
 
-// ─── 간단한 앰비언트 BGM (전투 분위기 패드) ───
-let musicTimer = null;
-const CHORDS = [
-  [130.8, 196.0, 261.6], // Cm
-  [155.6, 233.1, 311.1], // Eb
-  [174.6, 261.6, 349.2], // Fm
-  [116.5, 174.6, 233.1], // Bb
-];
-let chordIdx = 0;
+// ═══════════════════════════════════════════════════════
+// BGM 시스템
+// 1) public/assets/audio/bgm_game.mp3 · bgm_title.mp3 파일이 있으면 그걸 루프 재생 (Suno 트랙 투입용)
+// 2) 없으면 프로시저럴 작곡 엔진 — 코드 진행 + 하프 아르페지오 + 베이스 + 심장박동 + 플루트 모티프
+// ═══════════════════════════════════════════════════════
 
-function playChord() {
-  if (!ctx || !enabled) return;
-  const chord = CHORDS[chordIdx % CHORDS.length];
-  chordIdx++;
-  const t0 = now();
-  chord.forEach((f) => {
+const BGM_FILES = {
+  title: './assets/audio/bgm_title.mp3',
+  game: './assets/audio/bgm_game.mp3',
+};
+const fileBuffers = {}; // mode → AudioBuffer | 'missing'
+let fileSource = null;
+
+let currentMode = null;
+let schedTimer = null;
+
+// ── D 도리안 진행: Dm → Bb → F → C (신비로운 숲 감성) ──
+const NOTE = (n) => 440 * Math.pow(2, (n - 69) / 12); // MIDI → Hz
+const PROG = [
+  { root: 38, chord: [50, 53, 57], scale: [50, 52, 53, 55, 57, 59, 60] }, // Dm
+  { root: 34, chord: [46, 50, 53], scale: [46, 48, 50, 53, 55, 57, 58] }, // Bb
+  { root: 41, chord: [53, 57, 60], scale: [53, 55, 57, 60, 62, 64, 65] }, // F
+  { root: 36, chord: [48, 52, 55], scale: [48, 50, 52, 55, 57, 60, 62] }, // C
+];
+const BPM = 82;
+const BEAT = 60 / BPM;
+const BAR = BEAT * 4;
+let barCount = 0;
+let nextBarTime = 0;
+
+function pluck(midi, t, vol = 0.09, dur = 1.6) {
+  // 하프/켈틱 현 소리: 트라이앵글 + 빠른 감쇠 + 에코
+  const f = NOTE(midi);
+  for (const [delay, v] of [[0, vol], [BEAT * 1.5, vol * 0.35]]) {
     const osc = ctx.createOscillator();
     const g = ctx.createGain();
-    osc.type = 'sine';
+    osc.type = 'triangle';
     osc.frequency.value = f;
-    g.gain.setValueAtTime(0, t0);
-    g.gain.linearRampToValueAtTime(0.05, t0 + 1.2);
-    g.gain.linearRampToValueAtTime(0.02, t0 + 3.4);
-    g.gain.linearRampToValueAtTime(0, t0 + 4.0);
+    g.gain.setValueAtTime(0, t + delay);
+    g.gain.linearRampToValueAtTime(v, t + delay + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + delay + dur);
     osc.connect(g).connect(musicGain);
-    osc.start(t0);
-    osc.stop(t0 + 4.2);
-    // 옥타브 위 반짝임
-    const osc2 = ctx.createOscillator();
-    const g2 = ctx.createGain();
-    osc2.type = 'triangle';
-    osc2.frequency.value = f * 2;
-    g2.gain.setValueAtTime(0, t0);
-    g2.gain.linearRampToValueAtTime(0.012, t0 + 2.0);
-    g2.gain.linearRampToValueAtTime(0, t0 + 4.0);
-    osc2.connect(g2).connect(musicGain);
-    osc2.start(t0);
-    osc2.stop(t0 + 4.2);
-  });
+    osc.start(t + delay);
+    osc.stop(t + delay + dur + 0.1);
+  }
 }
 
-export function startMusic() {
-  if (!ctx || musicTimer) return;
-  playChord();
-  musicTimer = setInterval(playChord, 4000);
+function padNote(midi, t, dur, vol = 0.028) {
+  const f = NOTE(midi);
+  for (const det of [-4, 3]) { // 디튠 2보이스 (따뜻함)
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.frequency.value = 900;
+    osc.type = 'sawtooth';
+    osc.frequency.value = f;
+    osc.detune.value = det;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + dur * 0.35);
+    g.gain.linearRampToValueAtTime(vol * 0.7, t + dur * 0.8);
+    g.gain.linearRampToValueAtTime(0, t + dur + 0.05);
+    osc.connect(filt).connect(g).connect(musicGain);
+    osc.start(t);
+    osc.stop(t + dur + 0.2);
+  }
 }
+
+function bassNote(midi, t, dur = BEAT * 1.6, vol = 0.11) {
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = NOTE(midi);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.connect(g).connect(musicGain);
+  osc.start(t);
+  osc.stop(t + dur + 0.1);
+}
+
+function heartbeat(t, vol = 0.10) {
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(64, t);
+  osc.frequency.exponentialRampToValueAtTime(38, t + 0.22);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+  osc.connect(g).connect(musicGain);
+  osc.start(t);
+  osc.stop(t + 0.35);
+}
+
+function fluteNote(midi, t, dur, vol = 0.05) {
+  const f = NOTE(midi);
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  const vib = ctx.createOscillator();
+  const vibG = ctx.createGain();
+  vib.frequency.value = 5.2;
+  vibG.gain.value = 5;
+  vib.connect(vibG).connect(osc.frequency);
+  osc.type = 'sine';
+  osc.frequency.value = f;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + dur * 0.3);
+  g.gain.linearRampToValueAtTime(0, t + dur);
+  osc.connect(g).connect(musicGain);
+  osc.start(t); vib.start(t);
+  osc.stop(t + dur + 0.1); vib.stop(t + dur + 0.1);
+}
+
+// 한 마디 스케줄링
+function scheduleBar(t, mode) {
+  const step = PROG[barCount % PROG.length];
+  const isTitle = mode === 'title';
+
+  // 패드 (코드 전체)
+  for (const m of step.chord) padNote(m, t, BAR * 1.05, isTitle ? 0.034 : 0.026);
+  padNote(step.chord[0] + 12, t, BAR, 0.012);
+
+  // 베이스
+  bassNote(step.root, t);
+  if (!isTitle) bassNote(step.root, t + BEAT * 2.5, BEAT, 0.07);
+
+  // 심장박동 퍼커션 (게임만, 2/4마디마다)
+  if (!isTitle && barCount % 2 === 1) {
+    heartbeat(t + BEAT * 1);
+    heartbeat(t + BEAT * 1.4, 0.05);
+  }
+
+  // 하프 아르페지오 — 8분음표, 코드톤+스케일 랜덤워크
+  const density = isTitle ? 0.55 : 0.75;
+  let idx = Math.floor(Math.random() * 3);
+  for (let e = 0; e < 8; e++) {
+    if (Math.random() > density) continue;
+    const useChord = e % 2 === 0;
+    const src = useChord ? step.chord : step.scale;
+    idx = Math.max(0, Math.min(src.length - 1, idx + (Math.random() < 0.5 ? -1 : 1)));
+    pluck(src[idx] + 12, t + e * BEAT * 0.5, e === 0 ? 0.085 : 0.05 + Math.random() * 0.025);
+  }
+
+  // 플루트 모티프 (4마디마다 한 번, 은은하게)
+  if (barCount % 4 === 2 && Math.random() < 0.8) {
+    const s = step.scale;
+    let mi = 3 + Math.floor(Math.random() * 3);
+    let mt = t + BEAT * (Math.random() < 0.5 ? 0 : 1);
+    for (let k = 0; k < 3 + Math.floor(Math.random() * 2); k++) {
+      const d = BEAT * (Math.random() < 0.6 ? 1 : 1.5);
+      fluteNote(s[mi] + 24, mt, d * 0.92, isTitle ? 0.055 : 0.04);
+      mi = Math.max(0, Math.min(s.length - 1, mi + (Math.random() < 0.5 ? -1 : Math.random() < 0.5 ? 1 : 2)));
+      mt += d;
+    }
+  }
+
+  // 벨 반짝임
+  if (Math.random() < 0.4) {
+    pluck(step.chord[Math.floor(Math.random() * 3)] + 24, t + BEAT * (1 + Math.floor(Math.random() * 3)), 0.028, 2.2);
+  }
+
+  barCount++;
+}
+
+// 파일 BGM 시도 → 실패 시 프로시저럴
+async function tryFileBGM(mode) {
+  if (fileBuffers[mode] === 'missing') return false;
+  if (fileBuffers[mode]) return playFileBGM(mode);
+  try {
+    const res = await fetch(BGM_FILES[mode]);
+    if (!res.ok) throw 0;
+    const buf = await res.arrayBuffer();
+    fileBuffers[mode] = await ctx.decodeAudioData(buf);
+    return playFileBGM(mode);
+  } catch {
+    fileBuffers[mode] = 'missing';
+    return false;
+  }
+}
+
+function playFileBGM(mode) {
+  stopMusicInternal();
+  const src = ctx.createBufferSource();
+  src.buffer = fileBuffers[mode];
+  src.loop = true;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, now());
+  g.gain.linearRampToValueAtTime(0.8, now() + 2);
+  src.connect(g).connect(musicGain);
+  src.start();
+  fileSource = { src, g };
+  return true;
+}
+
+function stopMusicInternal() {
+  if (schedTimer) { clearInterval(schedTimer); schedTimer = null; }
+  if (fileSource) {
+    try {
+      fileSource.g.gain.linearRampToValueAtTime(0, now() + 1.2);
+      fileSource.src.stop(now() + 1.3);
+    } catch {}
+    fileSource = null;
+  }
+}
+
+export async function startMusic(mode = 'game') {
+  if (!ctx || !enabled) return;
+  if (currentMode === mode && (schedTimer || fileSource)) return;
+  currentMode = mode;
+  stopMusicInternal();
+
+  if (await tryFileBGM(mode)) return; // Suno 등 외부 트랙 우선
+
+  // 프로시저럴 엔진: 룩어헤드 스케줄러
+  barCount = 0;
+  nextBarTime = now() + 0.1;
+  scheduleBar(nextBarTime, mode);
+  nextBarTime += BAR;
+  schedTimer = setInterval(() => {
+    if (!ctx) return;
+    while (nextBarTime < now() + BAR * 0.9) {
+      scheduleBar(nextBarTime, currentMode);
+      nextBarTime += BAR;
+    }
+  }, 250);
+}
+
 export function stopMusic() {
-  if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+  currentMode = null;
+  stopMusicInternal();
 }
+
+// 디버그·검증용 상태 조회
+export function getMusicState() {
+  return {
+    ctxState: ctx ? ctx.state : 'none',
+    mode: currentMode,
+    procedural: !!schedTimer,
+    file: !!fileSource,
+    bars: barCount,
+    fileCache: Object.fromEntries(Object.entries(fileBuffers).map(([k, v]) => [k, v === 'missing' ? 'missing' : 'loaded'])),
+  };
+}
+
+let muted = false;
 export function setMuted(m) {
+  muted = m;
   if (master) master.gain.value = m ? 0 : 0.55;
+}
+export function toggleMute() {
+  setMuted(!muted);
+  return muted;
 }

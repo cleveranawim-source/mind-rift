@@ -9,7 +9,7 @@ import { updateHeroAI, updateMinionAI } from './ai/ai.js';
 import { SelSystem } from './sel/sel.js';
 import { updateFX, drawFX, drawUnderFX, drawFloaters, clearFX, shake, spawnParticles, spawnRing, spawnFloater, spawnCorpse, addShake } from './fx/fx.js';
 import { drawHUD, drawWorldPings, pingWheelSelection, minimapRect } from './ui/hud.js';
-import { SFX, startMusic, stopMusic } from './audio/audio.js';
+import { SFX, startMusic, stopMusic, toggleMute } from './audio/audio.js';
 import { envReady, UNIT, MON, loadImg, imgReady } from './ui/assets.js';
 import { Renderer3D } from './render3d/renderer3d.js';
 import { drawUnitBars } from './ui/hud.js';
@@ -98,7 +98,7 @@ export class Game {
     this._last = performance.now();
 
     this.announce('마음의 협곡에 오신 것을 환영합니다', '#3fe5a0', '그림자 군단의 넥서스를 파괴하세요');
-    startMusic();
+    startMusic('game');
   }
 
   // ═══ 입력 ═══
@@ -147,6 +147,9 @@ export class Game {
         if (!this.sel.pingWheel) {
           this.sel.pingWheel = { sx: this.input.mx, sy: this.input.my, wx: aim.x, wy: aim.y };
         }
+      } else if (k === 'm') {
+        const m = toggleMute();
+        this.banner(m ? '🔇 음소거' : '🔊 사운드 켜짐');
       }
     });
     on(window, 'keyup', (e) => {
