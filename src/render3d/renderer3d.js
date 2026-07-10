@@ -32,6 +32,31 @@ const MON_MODEL_URLS = {
   mon_boar: './assets/models/mon3d_boar.glb',
 };
 
+// 4족 보행 캐릭터 — 버텍스 셰이더 갤럽(다리 가위질) 적용 대상
+const QUAD_KEYS = new Set(['fox', 'shadow_fox', 'mon_wolf', 'mon_focus', 'mon_boar']);
+
+// 리깅 없는 4족 메시에 다리 스윙 착시를 주는 셰이더 패치.
+// 하단(다리 영역) 버텍스를 좌/우(x부호)·앞/뒤(z위상) 반대 위상으로 전단 → 트로트 게이트처럼 보임
+function addGallopShader(mat, minY, legTop, amp) {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = { value: 0 };
+    shader.uniforms.uGallop = { value: 0 };
+    mat.userData.gallopU = shader.uniforms;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uGallop;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          float legW = 1.0 - smoothstep(float(${minY.toFixed(4)}), float(${legTop.toFixed(4)}), position.y);
+          float side = position.x > 0.0 ? 1.0 : -1.0;
+          float phase = uTime * 13.0 + side * 3.14159 + position.z * 2.2;
+          transformed.z += sin(phase) * legW * uGallop * float(${amp.toFixed(4)});
+          transformed.y += abs(sin(phase)) * legW * uGallop * float(${(amp * 0.35).toFixed(4)});
+        }
+      `);
+  };
+  mat.needsUpdate = true;
+}
+
 // 공격 애니메이션 클립 (재리깅 GLB — 클립만 추출해 본 모델에 재생)
 const ATTACK_URLS = {
   guardian: './assets/models/atk_guardian.glb',
@@ -312,11 +337,21 @@ export class Renderer3D {
     obj.scale.setScalar(scale);
     // 재질 복제 (피격 플래시가 서로 간섭하지 않게) + 발광 슬롯 수집 + 그림자 캐스팅
     const mats = [];
+    const isQuad = QUAD_KEYS.has(key);
     obj.traverse((n) => {
       if (n.isMesh && n.material) {
         n.material = n.material.clone();
         n.frustumCulled = false; // 스킨 메시 컬링 버그 방지
         n.castShadow = true;
+        // 4족 캐릭터: 다리 스윙 셰이더
+        if (isQuad) {
+          addGallopShader(
+            n.material,
+            lib.rawMinY,
+            lib.rawMinY + lib.rawH * 0.42,
+            lib.rawH * 0.10
+          );
+        }
         mats.push(n.material);
       }
     });
@@ -519,12 +554,20 @@ export class Renderer3D {
         if (actor.action) {
           if (!actor.attacking) actor.action.timeScale = h.moving ? 1.35 : 0.1;
         } else {
-          // 클립 없는 모델(여우 등): 절차적 질주 — 크게 뛰고 몸을 흔든다
+          // 클립 없는 모델(여우 등): 다리는 셰이더가 움직이므로 몸통은 절제된 바운스만
           actor.obj.position.y = actor.yOff
-            + Math.sin(t * 2.4 + h.id) * 2
-            + (h.moving ? Math.abs(Math.sin(t * 11 + h.id)) * 9 : 0);
-          actor.obj.rotation.z = h.moving ? Math.sin(t * 11 + h.id) * 0.13 : Math.sin(t * 1.5 + h.id) * 0.03;
-          actor.obj.rotation.x = h.moving ? Math.sin(t * 11 + h.id + 1.2) * 0.09 : 0;
+            + Math.sin(t * 2.4 + h.id) * 1.5
+            + (h.moving ? Math.abs(Math.sin(t * 13 + h.id)) * 4 : 0);
+          actor.obj.rotation.z = h.moving ? Math.sin(t * 13 + h.id) * 0.05 : Math.sin(t * 1.5 + h.id) * 0.025;
+          actor.obj.rotation.x = h.moving ? Math.sin(t * 13 + h.id + 1.2) * 0.04 : 0;
+        }
+        // 갤럽 셰이더 유니폼 (4족)
+        for (const m of actor.mats) {
+          const gu = m.userData.gallopU;
+          if (gu) {
+            gu.uTime.value = t;
+            gu.uGallop.value += ((h.moving ? 1 : 0) - gu.uGallop.value) * Math.min(1, dt * 9);
+          }
         }
         // 공격 클립 (리깅 캐릭터)
         this.syncAttackClip(actor, modelKey, h);
@@ -603,19 +646,26 @@ export class Renderer3D {
       if (actor) {
         actor.used = true;
         actor.obj.visible = true;
-        // 절차적 4족 모션: 추격/복귀 시 갤럽, 대기 시 숨쉬기
+        // 절차적 4족 모션: 다리는 셰이더, 몸통은 절제된 바운스
         const active = mo.moving;
         actor.obj.position.set(ox, actor.yOff
           + Math.sin(t * 2 + mo.id) * 1.5
-          + (active ? Math.abs(Math.sin(t * 10 + mo.id)) * 7 : 0), oz);
+          + (active ? Math.abs(Math.sin(t * 13 + mo.id)) * 3.5 : 0), oz);
         const targetYaw = Math.PI / 2 - mo.facing;
         let dyw = targetYaw - actor.obj.rotation.y;
         while (dyw > Math.PI) dyw -= Math.PI * 2;
         while (dyw < -Math.PI) dyw += Math.PI * 2;
         actor.obj.rotation.y += dyw * Math.min(1, dt * 8);
-        actor.obj.rotation.z = active ? Math.sin(t * 10 + mo.id) * 0.1 : Math.sin(t * 1.6 + mo.id) * 0.025;
+        actor.obj.rotation.z = active ? Math.sin(t * 13 + mo.id) * 0.045 : Math.sin(t * 1.6 + mo.id) * 0.025;
         const flash = Math.max(0, mo.hitFlash || 0) / 0.13;
-        for (const m of actor.mats) if (m.emissive) m.emissive.setScalar(flash * 0.8);
+        for (const m of actor.mats) {
+          if (m.emissive) m.emissive.setScalar(flash * 0.8);
+          const gu = m.userData.gallopU;
+          if (gu) {
+            gu.uTime.value = t;
+            gu.uGallop.value += ((active ? 1 : 0) - gu.uGallop.value) * Math.min(1, dt * 9);
+          }
+        }
       } else {
         const d = mo.radius * (isBig ? 3.4 : 3.0);
         const bob = isBig ? Math.sin(t * 1.8 + mo.id) * 7 : Math.abs(Math.sin(t * 5 + mo.id)) * 2;
