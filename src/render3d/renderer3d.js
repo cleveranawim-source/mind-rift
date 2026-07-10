@@ -22,7 +22,15 @@ const MODEL_URLS = {
   shadow_gale: './assets/models/unit_shadow_gale.glb',
   shadow_moon: './assets/models/unit_shadow_moon.glb',
 };
-const MODEL_HEIGHT = 96; // 영웅 목표 신장 (월드 px)
+const MODEL_HEIGHT = 76; // 영웅 목표 신장 (월드 px) — 맵 대비 LOL 비율
+
+// 정글 몬스터 3D 모델 (정령·수호자는 발광 부유체라 빌보드 유지)
+const MON_MODEL_URLS = {
+  mon_calm: './assets/models/mon3d_calm.glb',
+  mon_wolf: './assets/models/mon3d_wolf.glb',
+  mon_focus: './assets/models/mon3d_focus.glb',
+  mon_boar: './assets/models/mon3d_boar.glb',
+};
 
 // 공격 애니메이션 클립 (재리깅 GLB — 클립만 추출해 본 모델에 재생)
 const ATTACK_URLS = {
@@ -36,8 +44,8 @@ const ATTACK_URLS = {
   shadow_moon: './assets/models/atk_shadow_moon.glb',
 };
 
-const CAM_H = 820;   // 카메라 높이
-const CAM_D = 580;   // 카메라 뒤 거리 (기울기 결정)
+const CAM_H = 1080;  // 카메라 높이 (LOL 비율로 줌아웃)
+const CAM_D = 760;   // 카메라 뒤 거리 (기울기 결정)
 
 export class Renderer3D {
   constructor(canvas, terrainCanvas, fogCanvas) {
@@ -45,6 +53,8 @@ export class Renderer3D {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x050906);
@@ -93,6 +103,7 @@ export class Renderer3D {
       const geo = new THREE.OctahedronGeometry(52);
       const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92 });
       const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
       const wire = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.25 }));
       mesh.add(wire);
       mesh.position.set(NEXUS_POS[team].x, 72, NEXUS_POS[team].y);
@@ -109,7 +120,39 @@ export class Renderer3D {
     this.scene.add(new THREE.HemisphereLight(0xbfe8d0, 0x1a2a20, 1.35));
     const sun = new THREE.DirectionalLight(0xfff2dc, 1.6);
     sun.position.set(-600, 1200, 400);
-    this.scene.add(sun);
+    // 실시간 그림자 (카메라 주변만 고해상도로)
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.left = -950;
+    sun.shadow.camera.right = 950;
+    sun.shadow.camera.top = 950;
+    sun.shadow.camera.bottom = -950;
+    sun.shadow.camera.near = 200;
+    sun.shadow.camera.far = 3200;
+    sun.shadow.bias = -0.0006;
+    this.scene.add(sun, sun.target);
+    this.sun = sun;
+
+    // 그림자 수신 전용 투명 평면 (페인팅 지형 위에 그림자만 얹음)
+    const shadowPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(WORLD, WORLD),
+      new THREE.ShadowMaterial({ opacity: 0.34 })
+    );
+    shadowPlane.rotation.x = -Math.PI / 2;
+    shadowPlane.position.set(WORLD / 2, 1, WORLD / 2);
+    shadowPlane.receiveShadow = true;
+    this.scene.add(shadowPlane);
+
+    // 빌보드용 블롭 그림자 텍스처
+    const bc = document.createElement('canvas');
+    bc.width = bc.height = 64;
+    const bg = bc.getContext('2d');
+    const bgrad = bg.createRadialGradient(32, 32, 4, 32, 32, 30);
+    bgrad.addColorStop(0, 'rgba(0,0,0,0.5)');
+    bgrad.addColorStop(1, 'rgba(0,0,0,0)');
+    bg.fillStyle = bgrad;
+    bg.fillRect(0, 0, 64, 64);
+    this.blobTex = new THREE.CanvasTexture(bc);
     // PBR 재질용 환경맵 (IBL) — 없으면 Meshy 모델이 시커멓게 나옴
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -147,16 +190,16 @@ export class Renderer3D {
     const n = trees.length;
     const coneGeo = new THREE.ConeGeometry(1, 1, 7);
     const trunkGeo = new THREE.CylinderGeometry(0.13, 0.2, 1, 5);
-    // 언릿 재질 — 페인팅 지형과 톤 일치 (라이트 영향으로 뿌옇게 뜨는 것 방지)
-    const coneMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    // 고정 색 2재질 (인스턴스 컬러의 흰색 누락 버그 회피) — 언릿으로 페인팅 지형과 톤 일치
+    const lowMat = new THREE.MeshBasicMaterial({ color: 0x14301c });
+    const topMat = new THREE.MeshBasicMaterial({ color: 0x1e4527 });
     const trunkMat = new THREE.MeshBasicMaterial({ color: 0x241a10 });
-    const cones = new THREE.InstancedMesh(coneGeo, coneMat, n * 2);
+    const lows = new THREE.InstancedMesh(coneGeo, lowMat, n);
+    const tops = new THREE.InstancedMesh(coneGeo, topMat, n);
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, n);
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3();
-    const col = new THREE.Color();
-    let ci = 0;
     trees.forEach((tr, i) => {
       const h = tr.s * 3.4;
       const r = tr.s * 1.5;
@@ -164,21 +207,20 @@ export class Renderer3D {
       q.setFromEuler(new THREE.Euler(lean, i * 1.7, 0));
       // 아래 콘 (몸통 숲)
       m.compose(up.set(tr.x, h * 0.42, tr.z), q, new THREE.Vector3(r, h * 0.6, r));
-      cones.setMatrixAt(ci, m);
-      col.setHSL(0.38 + Math.sin(i * 3.1) * 0.045, 0.45, 0.10 + (i % 5) * 0.011);
-      cones.setColorAt(ci++, col);
+      lows.setMatrixAt(i, m);
       // 위 콘
       m.compose(up.set(tr.x, h * 0.74, tr.z), q, new THREE.Vector3(r * 0.66, h * 0.48, r * 0.66));
-      cones.setMatrixAt(ci, m);
-      col.offsetHSL(0.012, 0.04, 0.022);
-      cones.setColorAt(ci++, col);
+      tops.setMatrixAt(i, m);
       // 줄기
       m.compose(up.set(tr.x, h * 0.16, tr.z), new THREE.Quaternion(), new THREE.Vector3(tr.s, h * 0.34, tr.s));
       trunks.setMatrixAt(i, m);
     });
-    cones.instanceMatrix.needsUpdate = true;
-    if (cones.instanceColor) cones.instanceColor.needsUpdate = true;
-    this.scene.add(cones, trunks);
+    lows.instanceMatrix.needsUpdate = true;
+    tops.instanceMatrix.needsUpdate = true;
+    trunks.instanceMatrix.needsUpdate = true;
+    lows.castShadow = true;
+    tops.castShadow = true;
+    this.scene.add(lows, tops, trunks);
   }
 
   // 맵 가장자리 절벽 — 카메라가 남쪽에서 보므로 남쪽은 낮게, 나머지는 적당히
@@ -213,9 +255,11 @@ export class Renderer3D {
   loadModel(key) {
     const cached = this.modelLib.get(key);
     if (cached) return cached;
+    const url = MODEL_URLS[key] || MON_MODEL_URLS[key];
+    if (!url) { this.modelLib.set(key, 'missing'); return 'missing'; }
     this.modelLib.set(key, 'loading');
     this.gltfLoader.load(
-      MODEL_URLS[key],
+      url,
       (gltf) => {
         // 금속성 과다 보정 (환경맵 없이도 살 수 있게)
         gltf.scene.traverse((n) => {
@@ -225,9 +269,8 @@ export class Renderer3D {
           }
         });
         const box = new THREE.Box3().setFromObject(gltf.scene);
-        const h = Math.max(0.001, box.max.y - box.min.y);
-        const scale = MODEL_HEIGHT / h;
-        this.modelLib.set(key, { scene: gltf.scene, clips: gltf.animations, scale, yOff: -box.min.y * scale });
+        const rawH = Math.max(0.001, box.max.y - box.min.y);
+        this.modelLib.set(key, { scene: gltf.scene, clips: gltf.animations, rawH, rawMinY: box.min.y });
       },
       undefined,
       () => this.modelLib.set(key, 'missing')
@@ -258,20 +301,22 @@ export class Renderer3D {
   }
 
   // ── 유닛별 액터 인스턴스 (스켈레톤 복제 + 애니메이션 믹서) ──
-  getActor(id, key) {
+  getActor(id, key, height = MODEL_HEIGHT) {
     let a = this.actors.get(id);
     if (a && a.key === key) return a;
     const lib = this.loadModel(key);
     if (lib === 'loading' || lib === 'missing') return null;
     if (a) this.scene.remove(a.obj);
+    const scale = height / lib.rawH;
     const obj = SkeletonUtils.clone(lib.scene);
-    obj.scale.setScalar(lib.scale);
-    // 재질 복제 (피격 플래시가 서로 간섭하지 않게) + 발광 슬롯 수집
+    obj.scale.setScalar(scale);
+    // 재질 복제 (피격 플래시가 서로 간섭하지 않게) + 발광 슬롯 수집 + 그림자 캐스팅
     const mats = [];
     obj.traverse((n) => {
       if (n.isMesh && n.material) {
         n.material = n.material.clone();
         n.frustumCulled = false; // 스킨 메시 컬링 버그 방지
+        n.castShadow = true;
         mats.push(n.material);
       }
     });
@@ -282,7 +327,7 @@ export class Renderer3D {
       action.play();
     }
     this.scene.add(obj);
-    a = { obj, mixer, action, key, yOff: lib.yOff, mats, baseScale: lib.scale };
+    a = { obj, mixer, action, key, yOff: -lib.rawMinY * scale, mats, baseScale: scale };
     this.actors.set(id, a);
     return a;
   }
@@ -379,7 +424,7 @@ export class Renderer3D {
     return hit ? { x: hit.x, y: hit.z } : { x: 0, y: 0 };
   }
 
-  // ── 유닛 빌보드 동기화 ──
+  // ── 유닛 빌보드 동기화 (블롭 그림자 포함) ──
   syncSprite(key, id, x, y, h, d, flip, dimmed = 0) {
     let entry = this.pool.get(id);
     const tex = this.getTexture(key);
@@ -387,8 +432,14 @@ export class Renderer3D {
     if (!entry) {
       const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
       const sprite = new THREE.Sprite(mat);
-      this.scene.add(sprite);
-      entry = { sprite, key };
+      // 빌보드는 섀도우맵에 안 잡히므로 블롭 그림자로 접지감 부여
+      const blob = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ map: this.blobTex, transparent: true, depthWrite: false })
+      );
+      blob.rotation.x = -Math.PI / 2;
+      this.scene.add(sprite, blob);
+      entry = { sprite, blob, key };
       this.pool.set(id, entry);
     }
     if (entry.key !== key) {
@@ -400,6 +451,9 @@ export class Renderer3D {
     entry.sprite.position.set(x, h, y);
     entry.sprite.scale.set(flip ? -d : d, d, 1);
     entry.sprite.material.color.setScalar(1 - dimmed * 0.6);
+    entry.blob.visible = true;
+    entry.blob.position.set(x, 2, y);
+    entry.blob.scale.set(d * 0.62, d * 0.62, 1);
     entry.used = true;
   }
 
@@ -434,6 +488,10 @@ export class Renderer3D {
       this.camTarget.z + CAM_D * zoomK + shake.y * 0.8
     );
     this.camera.lookAt(this.camTarget.x, 0, this.camTarget.z);
+    // 태양(그림자 카메라)이 화면을 따라다님
+    this.sun.position.set(this.camTarget.x - 520, 1150, this.camTarget.z + 360);
+    this.sun.target.position.set(this.camTarget.x, 0, this.camTarget.z);
+    this.sun.target.updateMatrixWorld();
 
     // 풀 리셋 플래그
     for (const e of this.pool.values()) e.used = false;
@@ -494,18 +552,18 @@ export class Renderer3D {
         }
       } else {
         const key = UNIT[modelKey];
-        const d = h.radius * 4.6;
-        const bob = h.moving ? Math.abs(Math.sin(t * 9 + h.id)) * 6 : Math.sin(t * 2 + h.id) * 2;
+        const d = h.radius * 3.7;
+        const bob = h.moving ? Math.abs(Math.sin(t * 9 + h.id)) * 5 : Math.sin(t * 2 + h.id) * 2;
         this.syncSprite(key, 'h' + h.id, h.x, h.y, d * 0.44 + bob, d, Math.cos(h.facing) < 0);
       }
-      this.syncRing('h' + h.id, h.x, h.y, h.radius * 1.5, h.isPlayer ? 0x3fe5a0 : (h.team === 'blue' ? 0x4a9eff : 0xff5555));
+      this.syncRing('h' + h.id, h.x, h.y, h.radius * 1.25, h.isPlayer ? 0x3fe5a0 : (h.team === 'blue' ? 0x4a9eff : 0xff5555));
     }
     // 미니언 (공격 런지 + 피격 넉백)
     for (const m of game.minions) {
       if (m.dead || !game.isVisible(m)) continue;
       const key = UNIT[m.team === 'blue' ? 'minion_blue' : 'minion_red'];
-      const d = m.radius * (m.type === 'cannon' ? 4.0 : 3.4);
-      const bob = Math.abs(Math.sin(t * 8 + m.id)) * 3;
+      const d = m.radius * (m.type === 'cannon' ? 3.4 : 2.9);
+      const bob = Math.abs(Math.sin(t * 8 + m.id)) * 2.5;
       let mx = m.x, mz = m.y;
       if (m.attackAnim > 0) {
         const k = Math.sin(((0.22 - m.attackAnim) / 0.22) * Math.PI) * 10;
@@ -527,12 +585,10 @@ export class Renderer3D {
       const key = ENV[tw.team === 'blue' ? 'towerBlue' : 'towerRed'];
       this.syncSprite(key, 't' + tw.id, tw.x, tw.y, 62, 165, false, tw.invulnerable ? 0.55 : 0);
     }
-    // 몬스터 (공격 런지 + 피격 넉백)
+    // 몬스터 — 정글 캠프 4종은 3D 메시, 정령·수호자는 발광 빌보드
     for (const mo of game.monsters) {
       if (mo.dead || !mo.def.id) continue;
-      const d = mo.radius * 3.4;
       const isBig = mo.def.id === 'spirit' || mo.def.id === 'sage';
-      const bob = isBig ? Math.sin(t * 1.8 + mo.id) * 7 : Math.abs(Math.sin(t * 5 + mo.id)) * 2;
       let ox = mo.x, oz = mo.y;
       if (mo.attackAnim > 0) {
         const k = Math.sin(((0.22 - mo.attackAnim) / 0.22) * Math.PI) * 12;
@@ -542,7 +598,29 @@ export class Renderer3D {
         const kb = mo.hitFlash / 0.13;
         ox += Math.cos(mo.hitDir) * kb * 7; oz += Math.sin(mo.hitDir) * kb * 7;
       }
-      this.syncSprite(MON[mo.def.id], 'o' + mo.id, ox, oz, d * 0.42 + bob, d, Math.cos(mo.facing) < 0);
+      const monKey = 'mon_' + mo.def.id;
+      const actor = MON_MODEL_URLS[monKey] ? this.getActor('o' + mo.id, monKey, mo.radius * 3.0) : null;
+      if (actor) {
+        actor.used = true;
+        actor.obj.visible = true;
+        // 절차적 4족 모션: 추격/복귀 시 갤럽, 대기 시 숨쉬기
+        const active = mo.moving;
+        actor.obj.position.set(ox, actor.yOff
+          + Math.sin(t * 2 + mo.id) * 1.5
+          + (active ? Math.abs(Math.sin(t * 10 + mo.id)) * 7 : 0), oz);
+        const targetYaw = Math.PI / 2 - mo.facing;
+        let dyw = targetYaw - actor.obj.rotation.y;
+        while (dyw > Math.PI) dyw -= Math.PI * 2;
+        while (dyw < -Math.PI) dyw += Math.PI * 2;
+        actor.obj.rotation.y += dyw * Math.min(1, dt * 8);
+        actor.obj.rotation.z = active ? Math.sin(t * 10 + mo.id) * 0.1 : Math.sin(t * 1.6 + mo.id) * 0.025;
+        const flash = Math.max(0, mo.hitFlash || 0) / 0.13;
+        for (const m of actor.mats) if (m.emissive) m.emissive.setScalar(flash * 0.8);
+      } else {
+        const d = mo.radius * (isBig ? 3.4 : 3.0);
+        const bob = isBig ? Math.sin(t * 1.8 + mo.id) * 7 : Math.abs(Math.sin(t * 5 + mo.id)) * 2;
+        this.syncSprite(MON[mo.def.id], 'o' + mo.id, ox, oz, d * 0.42 + bob, d, Math.cos(mo.facing) < 0);
+      }
     }
 
     // 넥서스 회전·펄스
@@ -558,7 +636,7 @@ export class Renderer3D {
     }
 
     // 안 쓴 풀 항목 숨김
-    for (const e of this.pool.values()) if (!e.used) e.sprite.visible = false;
+    for (const e of this.pool.values()) if (!e.used) { e.sprite.visible = false; if (e.blob) e.blob.visible = false; }
     for (const r of this.rings.values()) if (!r.used) r.visible = false;
     for (const a of this.actors.values()) if (!a.used) a.obj.visible = false;
 

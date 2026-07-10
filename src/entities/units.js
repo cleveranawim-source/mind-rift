@@ -812,9 +812,11 @@ export class Monster extends Unit {
       this.target = null;
       this.returning = true;
     }
+    this.moving = false;
     if (this.returning) {
       this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.5 * dt);
-      if (this.moveToward(this.home.x, this.home.y, dt)) this.returning = false;
+      this.moving = !this.moveToward(this.home.x, this.home.y, dt);
+      if (!this.moving) this.returning = false;
       return;
     }
     if (this.target && !this.target.dead) {
@@ -822,7 +824,7 @@ export class Monster extends Unit {
         this.facing = Math.atan2(this.target.y - this.y, this.target.x - this.x);
         if (this.attackCd <= 0) this.performAttack(game);
       } else {
-        this.moveToward(this.target.x, this.target.y, dt);
+        this.moving = !this.moveToward(this.target.x, this.target.y, dt);
       }
     }
   }

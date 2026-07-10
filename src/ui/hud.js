@@ -580,7 +580,7 @@ export function drawUnitBars(ctx, game) {
   for (const u of game.heroes) {
     if (u.dead || !game.isVisible(u)) continue;
     const sc = S(u.x, u.y);
-    const pt = P(u.x, u.y, u.radius * 4.6);
+    const pt = P(u.x, u.y, u.radius * 3.8);
     // 이름표
     ctx.font = `bold ${Math.round(12 * sc)}px "Noto Sans KR", sans-serif`;
     ctx.lineWidth = 3;
@@ -620,7 +620,7 @@ export function drawUnitBars(ctx, game) {
   for (const u of game.minions) {
     if (u.dead || u.hp >= u.maxHp || !game.isVisible(u)) continue;
     const sc = S(u.x, u.y);
-    const pt = P(u.x, u.y, u.radius * 3.3);
+    const pt = P(u.x, u.y, u.radius * 2.9);
     bar(ctx, pt.x, pt.y, 26 * sc, 3.5, u.hp / u.maxHp, unitColor(u, game));
   }
   // 타워 / 넥서스
@@ -641,7 +641,7 @@ export function drawUnitBars(ctx, game) {
   for (const u of game.monsters) {
     if (u.dead) continue;
     const sc = S(u.x, u.y);
-    const pt = P(u.x, u.y, u.radius * 3.5);
+    const pt = P(u.x, u.y, u.radius * 3.1);
     if (u.hp < u.maxHp || u.def.big) {
       bar(ctx, pt.x, pt.y, (u.def.big ? 48 : 34) * sc, 5, u.hp / u.maxHp, '#c8a44a');
     }
