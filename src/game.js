@@ -41,8 +41,8 @@ export class Game {
     }
     // 강물 반짝임 (y=x 대각선 강 위)
     this.riverSparks = [];
-    for (let i = 0; i < 44; i++) {
-      const t = 900 + Math.random() * 1400;
+    for (let i = 0; i < 60; i++) {
+      const t = WORLD * (0.28 + Math.random() * 0.44);
       const off = (Math.random() - 0.5) * 200;
       this.riverSparks.push({ x: t + off * 0.707, y: t - off * 0.707, ph: Math.random() * Math.PI * 2, sp: 8 + Math.random() * 14 });
     }
@@ -741,7 +741,7 @@ export class Game {
     const k = S / WORLD;
     fc.globalCompositeOperation = 'source-over';
     fc.clearRect(0, 0, S, S);
-    fc.fillStyle = 'rgba(3,7,5,0.72)';
+    fc.fillStyle = 'rgba(3,7,5,0.86)'; // 시야 밖은 확실히 어둡게
     fc.fillRect(0, 0, S, S);
     fc.globalCompositeOperation = 'destination-out';
     const punch = (x, y, r) => {

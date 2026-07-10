@@ -36,8 +36,16 @@ const MON_MODEL_URLS = {
 const QUAD_KEYS = new Set(['fox', 'shadow_fox', 'mon_wolf', 'mon_focus', 'mon_boar']);
 
 // 리깅 없는 4족 메시에 다리 스윙 착시를 주는 셰이더 패치.
-// 하단(다리 영역) 버텍스를 좌/우(x부호)·앞/뒤(z위상) 반대 위상으로 전단 → 트로트 게이트처럼 보임
-function addGallopShader(mat, minY, legTop, amp) {
+// 4족은 몸이 전방축으로 길다 → 바운딩박스로 전방축(x/z) 자동 감지.
+// 대각 게이트: (좌앞+우뒤) vs (우앞+좌뒤)가 반대 위상으로 스윙 = 트로트
+function addGallopShader(mat, lib) {
+  const minY = lib.rawMinY;
+  const legTop = lib.rawMinY + lib.rawH * 0.36;
+  const amp = lib.rawH * 0.17;
+  const fwdIsX = lib.rawSizeX > lib.rawSizeZ; // 긴 축 = 전방
+  const FWD = fwdIsX ? 'position.x' : 'position.z';
+  const LAT = fwdIsX ? 'position.z' : 'position.x';
+  const OUT = fwdIsX ? 'transformed.x' : 'transformed.z';
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = { value: 0 };
     shader.uniforms.uGallop = { value: 0 };
@@ -47,10 +55,13 @@ function addGallopShader(mat, minY, legTop, amp) {
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         {
           float legW = 1.0 - smoothstep(float(${minY.toFixed(4)}), float(${legTop.toFixed(4)}), position.y);
-          float side = position.x > 0.0 ? 1.0 : -1.0;
-          float phase = uTime * 13.0 + side * 3.14159 + position.z * 2.2;
-          transformed.z += sin(phase) * legW * uGallop * float(${amp.toFixed(4)});
-          transformed.y += abs(sin(phase)) * legW * uGallop * float(${(amp * 0.35).toFixed(4)});
+          legW = legW * legW; // 발끝일수록 크게
+          float side = ${LAT} > 0.0 ? 1.0 : -1.0;
+          float fore = ${FWD} > 0.0 ? 1.0 : -1.0;
+          // 대각 다리 쌍이 같은 위상 (트로트 게이트)
+          float phase = uTime * 15.0 + (side * fore > 0.0 ? 0.0 : 3.14159);
+          ${OUT} += sin(phase) * legW * uGallop * float(${amp.toFixed(4)});
+          transformed.y += max(0.0, sin(phase + 1.2)) * legW * uGallop * float(${(amp * 0.45).toFixed(4)});
         }
       `);
   };
@@ -295,7 +306,10 @@ export class Renderer3D {
         });
         const box = new THREE.Box3().setFromObject(gltf.scene);
         const rawH = Math.max(0.001, box.max.y - box.min.y);
-        this.modelLib.set(key, { scene: gltf.scene, clips: gltf.animations, rawH, rawMinY: box.min.y });
+        this.modelLib.set(key, {
+          scene: gltf.scene, clips: gltf.animations, rawH, rawMinY: box.min.y,
+          rawSizeX: box.max.x - box.min.x, rawSizeZ: box.max.z - box.min.z,
+        });
       },
       undefined,
       () => this.modelLib.set(key, 'missing')
@@ -343,15 +357,8 @@ export class Renderer3D {
         n.material = n.material.clone();
         n.frustumCulled = false; // 스킨 메시 컬링 버그 방지
         n.castShadow = true;
-        // 4족 캐릭터: 다리 스윙 셰이더
-        if (isQuad) {
-          addGallopShader(
-            n.material,
-            lib.rawMinY,
-            lib.rawMinY + lib.rawH * 0.42,
-            lib.rawH * 0.10
-          );
-        }
+        // 4족 캐릭터: 다리 스윙 셰이더 (전방축 자동 감지)
+        if (isQuad) addGallopShader(n.material, lib);
         mats.push(n.material);
       }
     });

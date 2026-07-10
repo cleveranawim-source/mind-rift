@@ -272,8 +272,8 @@ function drawMinimap(ctx, game) {
     ctx.strokeStyle = 'rgba(64,181,208,0.35)';
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(x + 880 * k, y + 880 * k);
-    ctx.lineTo(x + 2320 * k, y + 2320 * k);
+    ctx.moveTo(x + WORLD * 0.275 * k, y + WORLD * 0.275 * k);
+    ctx.lineTo(x + WORLD * 0.725 * k, y + WORLD * 0.725 * k);
     ctx.stroke();
   }
 

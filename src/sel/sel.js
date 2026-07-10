@@ -5,6 +5,7 @@ import { spawnRing, spawnFloater, spawnParticles } from '../fx/fx.js';
 import { SFX } from '../audio/audio.js';
 import { addBuff } from '../combat/abilities.js';
 import { champArt, shadowArt } from '../ui/assets.js';
+import { WORLD } from '../world/map.js';
 
 export class SelSystem {
   constructor(game) {
@@ -424,7 +425,7 @@ function buildEvents() {
             for (const h of g.heroesOfTeam(g.player.team)) {
               if (!h.dead) addBuff(h, { id: 'finalRally', dur: 30, dmgMul: 1.12 });
             }
-            sel.rallyPoint = { x: 1600, y: 1600, until: g.time + 8 };
+            sel.rallyPoint = { x: WORLD / 2, y: WORLD / 2, until: g.time + 8 };
           },
         },
         {

@@ -5,31 +5,35 @@
 import { dist, distToSegment, clamp, TAU } from '../core/math.js';
 import { ENV, loadImg, imgReady } from '../ui/assets.js';
 
-export const WORLD = 3200;
+// 월드 스케일 — 위치 좌표만 확대 (유닛·라인 폭은 유지 → 전장이 넓어짐)
+const S = 1.5;
+const sp = (pts) => pts.map(([x, y]) => [x * S, y * S]);
+
+export const WORLD = 3200 * S;
 
 // ─── 주요 지점 ───
 export const NEXUS_POS = {
-  blue: { x: 430, y: 2770 },
-  red: { x: 2770, y: 430 },
+  blue: { x: 430 * S, y: 2770 * S },
+  red: { x: 2770 * S, y: 430 * S },
 };
 export const FOUNTAIN = {
-  blue: { x: 240, y: 2960 },
-  red: { x: 2960, y: 240 },
+  blue: { x: 240 * S, y: 2960 * S },
+  red: { x: 2960 * S, y: 240 * S },
 };
 
 // 라인 웨이포인트 (파랑 → 빨강 방향)
 export const LANES = {
-  top: [
+  top: sp([
     [430, 2770], [440, 2500], [370, 2000], [370, 1300], [400, 650],
     [430, 430], [650, 400], [1300, 370], [2000, 370], [2500, 440], [2770, 430],
-  ],
-  mid: [
+  ]),
+  mid: sp([
     [430, 2770], [640, 2560], [1100, 2100], [1600, 1600], [2100, 1100], [2560, 640], [2770, 430],
-  ],
-  bot: [
+  ]),
+  bot: sp([
     [430, 2770], [700, 2760], [900, 2830], [1600, 2830], [2200, 2830], [2550, 2770],
     [2770, 2770], [2830, 2550], [2830, 1600], [2830, 900], [2760, 700], [2770, 430],
-  ],
+  ]),
 };
 
 // ─── 타워 ───
@@ -44,7 +48,7 @@ const BLUE_TOWERS = [
   { lane: 'bot', tier: 1, x: 1700, y: 2830 },
   { lane: 'bot', tier: 2, x: 1050, y: 2800 },
   { lane: 'mid', tier: 3, x: 590, y: 2610 },
-];
+].map((t) => ({ ...t, x: t.x * S, y: t.y * S }));
 
 export const TOWER_DEFS = [
   ...BLUE_TOWERS.map((t) => ({ ...t, team: 'blue' })),
@@ -62,7 +66,7 @@ const BLUE_CAMPS = [
   { id: 'wolf', name: '잿빛 늑대', buff: null, x: 1250, y: 1560, hp: 550, dmg: 28, gold: 55, xp: 70, big: false },
   { id: 'focus', name: '집중의 사슴', buff: 'focus', x: 1780, y: 2450, hp: 900, dmg: 40, gold: 90, xp: 110, big: true },
   { id: 'boar', name: '가시 멧돼지', buff: null, x: 1520, y: 2130, hp: 550, dmg: 28, gold: 55, xp: 70, big: false },
-];
+].map((c) => ({ ...c, x: c.x * S, y: c.y * S }));
 export const CAMP_DEFS = [
   ...BLUE_CAMPS.map((c) => ({ ...c, side: 'blue' })),
   ...BLUE_CAMPS.map((c) => {
@@ -73,12 +77,12 @@ export const CAMP_DEFS = [
 
 // 강의 대형 오브젝트 — 마음의 정령 (처치 시 팀 전체 버프)
 export const SPIRIT_DEF = {
-  id: 'spirit', name: '마음의 정령', x: 2120, y: 2120, hp: 2600, dmg: 70,
+  id: 'spirit', name: '마음의 정령', x: 2120 * S, y: 2120 * S, hp: 2600, dmg: 70,
   gold: 150, xp: 200, spawnAt: 150, respawn: 150, big: true,
 };
 // 지혜의 수호자 (후반 대형 버프)
 export const SAGE_DEF = {
-  id: 'sage', name: '지혜의 수호자', x: 1080, y: 1080, hp: 4200, dmg: 110,
+  id: 'sage', name: '지혜의 수호자', x: 1080 * S, y: 1080 * S, hp: 4200, dmg: 110,
   gold: 300, xp: 400, spawnAt: 420, respawn: 210, big: true,
 };
 
@@ -108,13 +112,13 @@ function laneClearance(x, y) {
 }
 
 function riverClearance(x, y) {
-  return distToSegment(x, y, 880, 880, 2320, 2320);
+  return distToSegment(x, y, 880 * S, 880 * S, 2320 * S, 2320 * S);
 }
 
 (function generateWalls() {
   const rng = mulberry32(20260709);
-  const attempts = 900;
-  for (let i = 0; i < attempts && WALLS.length < 52; i++) {
+  const attempts = 2000;
+  for (let i = 0; i < attempts && WALLS.length < 110; i++) {
     const x = 250 + rng() * (WORLD - 500);
     const y = 250 + rng() * (WORLD - 500);
     const r = 95 + rng() * 45;
@@ -168,7 +172,7 @@ export function isWalled(x, y, pad = 0) {
 export const BRUSH = [];
 (function generateBrush() {
   const rng = mulberry32(777);
-  for (let i = 0; i < 260 && BRUSH.length < 70; i++) {
+  for (let i = 0; i < 520 && BRUSH.length < 120; i++) {
     const x = 300 + rng() * (WORLD - 600);
     const y = 300 + rng() * (WORLD - 600);
     const lc = laneClearance(x, y);
@@ -231,29 +235,30 @@ export function renderTerrain() {
   }
 
   // 강 (주대각선, 은은한 발광)
+  const R0 = 880 * S, R1 = 2320 * S;
   g.save();
   g.lineCap = 'round';
   // 강둑 어두운 테두리
   g.strokeStyle = '#0a1c20';
   g.lineWidth = 340;
-  g.beginPath(); g.moveTo(880, 880); g.lineTo(2320, 2320); g.stroke();
+  g.beginPath(); g.moveTo(R0, R0); g.lineTo(R1, R1); g.stroke();
   if (P.water) {
     g.strokeStyle = P.water;
     g.lineWidth = 290;
-    g.beginPath(); g.moveTo(880, 880); g.lineTo(2320, 2320); g.stroke();
+    g.beginPath(); g.moveTo(R0, R0); g.lineTo(R1, R1); g.stroke();
   } else {
     g.strokeStyle = '#174754';
     g.lineWidth = 240;
-    g.beginPath(); g.moveTo(880, 880); g.lineTo(2320, 2320); g.stroke();
+    g.beginPath(); g.moveTo(R0, R0); g.lineTo(R1, R1); g.stroke();
   }
   g.strokeStyle = 'rgba(64,181,208,0.20)';
   g.lineWidth = 130;
-  g.beginPath(); g.moveTo(900, 900); g.lineTo(2300, 2300); g.stroke();
+  g.beginPath(); g.moveTo(R0 + 20, R0 + 20); g.lineTo(R1 - 20, R1 - 20); g.stroke();
   // 물결 줄무늬
-  for (let i = 0; i < 26; i++) {
-    const t = i / 26;
-    const cx = 900 + (2300 - 900) * t + (rng() - 0.5) * 120;
-    const cy = 900 + (2300 - 900) * t + (rng() - 0.5) * 120;
+  for (let i = 0; i < 40; i++) {
+    const t = i / 40;
+    const cx = R0 + (R1 - R0) * t + (rng() - 0.5) * 120;
+    const cy = R0 + (R1 - R0) * t + (rng() - 0.5) * 120;
     g.strokeStyle = 'rgba(120,220,240,0.12)';
     g.lineWidth = 4;
     g.beginPath();
@@ -401,8 +406,8 @@ export function renderTerrain() {
     g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
   };
   // 강을 따라 시안 글로우
-  for (let i = 0; i <= 4; i++) {
-    const t = 950 + (2250 - 950) * (i / 4);
+  for (let i = 0; i <= 6; i++) {
+    const t = (950 + (2250 - 950) * (i / 6)) * S;
     pool(t, t, 420, 'rgba(70,200,230,A)', 0.10);
   }
   // 오브젝트 웅덩이
