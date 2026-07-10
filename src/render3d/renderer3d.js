@@ -22,7 +22,7 @@ const MODEL_URLS = {
   shadow_gale: './assets/models/unit_shadow_gale.glb',
   shadow_moon: './assets/models/unit_shadow_moon.glb',
 };
-const MODEL_HEIGHT = 76; // 영웅 목표 신장 (월드 px) — 맵 대비 LOL 비율
+const MODEL_HEIGHT = 70; // 영웅 목표 신장 (월드 px) — 맵 대비 LOL 비율
 
 // 정글 몬스터 3D 모델 (정령·수호자는 발광 부유체라 빌보드 유지)
 const MON_MODEL_URLS = {
@@ -40,8 +40,8 @@ const QUAD_KEYS = new Set(['fox', 'shadow_fox', 'mon_wolf', 'mon_focus', 'mon_bo
 // 대각 게이트: (좌앞+우뒤) vs (우앞+좌뒤)가 반대 위상으로 스윙 = 트로트
 function addGallopShader(mat, lib) {
   const minY = lib.rawMinY;
-  const legTop = lib.rawMinY + lib.rawH * 0.36;
-  const amp = lib.rawH * 0.17;
+  const legTop = lib.rawMinY + lib.rawH * 0.38;
+  const amp = lib.rawH * 0.24; // 보폭 크게 — 걸음이 확실히 보이도록
   const fwdIsX = lib.rawSizeX > lib.rawSizeZ; // 긴 축 = 전방
   const FWD = fwdIsX ? 'position.x' : 'position.z';
   const LAT = fwdIsX ? 'position.z' : 'position.x';
@@ -59,7 +59,7 @@ function addGallopShader(mat, lib) {
           float side = ${LAT} > 0.0 ? 1.0 : -1.0;
           float fore = ${FWD} > 0.0 ? 1.0 : -1.0;
           // 대각 다리 쌍이 같은 위상 (트로트 게이트)
-          float phase = uTime * 15.0 + (side * fore > 0.0 ? 0.0 : 3.14159);
+          float phase = uTime * 11.5 + (side * fore > 0.0 ? 0.0 : 3.14159);
           ${OUT} += sin(phase) * legW * uGallop * float(${amp.toFixed(4)});
           transformed.y += max(0.0, sin(phase + 1.2)) * legW * uGallop * float(${(amp * 0.45).toFixed(4)});
         }
@@ -80,8 +80,8 @@ const ATTACK_URLS = {
   shadow_moon: './assets/models/atk_shadow_moon.glb',
 };
 
-const CAM_H = 1080;  // 카메라 높이 (LOL 비율로 줌아웃)
-const CAM_D = 760;   // 카메라 뒤 거리 (기울기 결정)
+const CAM_H = 1250;  // 카메라 높이 (LOL 비율로 줌아웃)
+const CAM_D = 880;   // 카메라 뒤 거리 (기울기 결정)
 
 export class Renderer3D {
   constructor(canvas, terrainCanvas, fogCanvas) {

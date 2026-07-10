@@ -522,6 +522,7 @@ export function drawWorldPings(ctx, game) {
     const pulse = 1 + (age % 0.6) * 1.2;
     const pt = game.r3d.project(ping.x, ping.y, 2);
     const sc = game.r3d.worldScaleAt(ping.x, ping.y);
+    if (!isFinite(pt.x) || !isFinite(pt.y) || !isFinite(sc)) continue;
     ctx.globalAlpha = clamp(ping.t / 0.5, 0, 1);
     ctx.strokeStyle = def.color;
     ctx.lineWidth = 3;
@@ -574,6 +575,7 @@ function unitColor(u, game) {
 export function drawUnitBars(ctx, game) {
   const P = (x, y, h) => game.r3d.project(x, y, h);
   const S = (x, y) => clamp(game.r3d.worldScaleAt(x, y), 0.5, 1.4);
+  const ok = (pt) => isFinite(pt.x) && isFinite(pt.y); // 카메라 뒤 투영 가드
   ctx.textAlign = 'center';
 
   // 영웅
@@ -581,6 +583,7 @@ export function drawUnitBars(ctx, game) {
     if (u.dead || !game.isVisible(u)) continue;
     const sc = S(u.x, u.y);
     const pt = P(u.x, u.y, u.radius * 3.8);
+    if (!ok(pt)) continue;
     // 이름표
     ctx.font = `bold ${Math.round(12 * sc)}px "Noto Sans KR", sans-serif`;
     ctx.lineWidth = 3;
@@ -621,6 +624,7 @@ export function drawUnitBars(ctx, game) {
     if (u.dead || u.hp >= u.maxHp || !game.isVisible(u)) continue;
     const sc = S(u.x, u.y);
     const pt = P(u.x, u.y, u.radius * 2.9);
+    if (!ok(pt)) continue;
     bar(ctx, pt.x, pt.y, 26 * sc, 3.5, u.hp / u.maxHp, unitColor(u, game));
   }
   // 타워 / 넥서스
@@ -628,6 +632,7 @@ export function drawUnitBars(ctx, game) {
     if (u.dead) continue;
     const sc = S(u.x, u.y);
     const pt = P(u.x, u.y, 150);
+    if (!ok(pt)) continue;
     bar(ctx, pt.x, pt.y, 60 * sc, 6, u.hp / u.maxHp, u.invulnerable ? '#8a95a0' : unitColor(u, game));
   }
   for (const team of ['blue', 'red']) {
@@ -635,6 +640,7 @@ export function drawUnitBars(ctx, game) {
     if (n.dead) continue;
     const sc = S(n.x, n.y);
     const pt = P(n.x, n.y, 160);
+    if (!ok(pt)) continue;
     bar(ctx, pt.x, pt.y, 86 * sc, 7, n.hp / n.maxHp, n.invulnerable ? '#8a95a0' : unitColor(n, game));
   }
   // 몬스터
@@ -642,6 +648,7 @@ export function drawUnitBars(ctx, game) {
     if (u.dead) continue;
     const sc = S(u.x, u.y);
     const pt = P(u.x, u.y, u.radius * 3.1);
+    if (!ok(pt)) continue;
     if (u.hp < u.maxHp || u.def.big) {
       bar(ctx, pt.x, pt.y, (u.def.big ? 48 : 34) * sc, 5, u.hp / u.maxHp, '#c8a44a');
     }

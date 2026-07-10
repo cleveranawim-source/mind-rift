@@ -119,6 +119,9 @@ export function updateFX(dt) {
 // ─── 유닛 아래 레이어: 데칼 + 시체 + 잔상 (3D 투영) ───
 const FS = 0.62; // 지면 원 원근 눌림 비율 (카메라 틸트 고정이라 상수)
 
+// 투영 발산 가드 — 카메라 뒤 좌표는 Infinity가 될 수 있음
+const finite = (pt, s) => isFinite(pt.x) && isFinite(pt.y) && isFinite(s) && s > 0;
+
 export function drawUnderFX(ctx, game) {
   const P = (x, y, h = 0) => game.r3d.project(x, y, h);
   const S = (x, y) => game.r3d.worldScaleAt(x, y);
@@ -126,6 +129,7 @@ export function drawUnderFX(ctx, game) {
     const t = clamp(d.life / d.maxLife, 0, 1);
     const pt = P(d.x, d.y, 1);
     const s = S(d.x, d.y);
+    if (!finite(pt, s)) continue;
     ctx.globalAlpha = t * 0.8;
     ctx.save();
     ctx.translate(pt.x, pt.y);
@@ -140,6 +144,7 @@ export function drawUnderFX(ctx, game) {
     const t = clamp(c.life / c.maxLife, 0, 1);
     const pt = P(c.x, c.y, c.d * 0.3);
     const s = S(c.x, c.y);
+    if (!finite(pt, s)) continue;
     ctx.globalAlpha = t * 0.75;
     ctx.save();
     ctx.translate(pt.x, pt.y + (1 - t) * 8);
@@ -152,6 +157,7 @@ export function drawUnderFX(ctx, game) {
     const t = clamp(a.life / a.maxLife, 0, 1);
     const pt = P(a.x, a.y, a.d * 0.35);
     const s = S(a.x, a.y);
+    if (!finite(pt, s)) continue;
     ctx.globalAlpha = t * 0.45;
     ctx.save();
     ctx.translate(pt.x, pt.y);
@@ -175,6 +181,7 @@ export function drawFX(ctx, game) {
   for (const b of beams) {
     const t = b.life / b.maxLife;
     const a = P(b.x1, b.y1, 34), c = P(b.x2, b.y2, 34);
+    if (!isFinite(a.x) || !isFinite(a.y) || !isFinite(c.x) || !isFinite(c.y)) continue;
     ctx.strokeStyle = b.color;
     ctx.globalAlpha = t * 0.35;
     ctx.lineWidth = (b.width * t + 1) * 3.5;
@@ -193,6 +200,7 @@ export function drawFX(ctx, game) {
     const t = clamp(s.life / s.maxLife, 0, 1);
     const pt = P(s.x, s.y, 26);
     const sc = S(s.x, s.y);
+    if (!finite(pt, sc)) continue;
     const sweep = 1.3;
     const prog = 1 - t;
     ctx.save();
@@ -215,6 +223,7 @@ export function drawFX(ctx, game) {
     const t = clamp(p.life / p.maxLife, 0, 1);
     const pt = P(p.x, p.y, 18);
     const sc = S(p.x, p.y);
+    if (!finite(pt, sc)) continue;
     if (p.ring) {
       const rr = p.size * (1.6 - t * 0.6) * sc;
       ctx.strokeStyle = p.color;
@@ -253,6 +262,7 @@ export function drawFloaters(ctx, game) {
   for (const f of floaters) {
     const t = clamp(f.life / f.maxLife, 0, 1);
     const pt = game.r3d.project(f.x, f.y, 60 + f.h);
+    if (!isFinite(pt.x) || !isFinite(pt.y)) continue;
     const sc = clamp(game.r3d.worldScaleAt(f.x, f.y), 0.75, 1.15);
     ctx.globalAlpha = t;
     ctx.font = `${f.crit ? 'bold ' : ''}${Math.round(f.size * sc)}px "Noto Sans KR", sans-serif`;

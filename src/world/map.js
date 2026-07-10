@@ -6,7 +6,7 @@ import { dist, distToSegment, clamp, TAU } from '../core/math.js';
 import { ENV, loadImg, imgReady } from '../ui/assets.js';
 
 // 월드 스케일 — 위치 좌표만 확대 (유닛·라인 폭은 유지 → 전장이 넓어짐)
-const S = 1.5;
+const S = 2.0;
 const sp = (pts) => pts.map(([x, y]) => [x * S, y * S]);
 
 export const WORLD = 3200 * S;
@@ -117,8 +117,8 @@ function riverClearance(x, y) {
 
 (function generateWalls() {
   const rng = mulberry32(20260709);
-  const attempts = 2000;
-  for (let i = 0; i < attempts && WALLS.length < 110; i++) {
+  const attempts = 3600;
+  for (let i = 0; i < attempts && WALLS.length < 190; i++) {
     const x = 250 + rng() * (WORLD - 500);
     const y = 250 + rng() * (WORLD - 500);
     const r = 95 + rng() * 45;
@@ -172,7 +172,7 @@ export function isWalled(x, y, pad = 0) {
 export const BRUSH = [];
 (function generateBrush() {
   const rng = mulberry32(777);
-  for (let i = 0; i < 520 && BRUSH.length < 120; i++) {
+  for (let i = 0; i < 900 && BRUSH.length < 190; i++) {
     const x = 300 + rng() * (WORLD - 600);
     const y = 300 + rng() * (WORLD - 600);
     const lc = laneClearance(x, y);

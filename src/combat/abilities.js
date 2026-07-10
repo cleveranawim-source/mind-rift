@@ -179,9 +179,13 @@ export function updateProjectiles(dt, game) {
 export function drawProjectiles(ctx, game) {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
+  const px0 = game.player.x, py0 = game.player.y;
   for (const p of projectiles) {
+    // 원거리 컬링 + 투영 발산 가드 (카메라 뒤 투영은 Infinity가 될 수 있음)
+    if (dist(p.x, p.y, px0, py0) > 2200) continue;
     const pt = game.r3d.project(p.x, p.y, 38);
     const sc = game.r3d.worldScaleAt(p.x, p.y);
+    if (!isFinite(pt.x) || !isFinite(pt.y) || !isFinite(sc) || sc <= 0) continue;
     ctx.save();
     ctx.translate(pt.x, pt.y);
     ctx.rotate(p.angle || 0);

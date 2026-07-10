@@ -826,6 +826,25 @@ export class Monster extends Unit {
       } else {
         this.moving = !this.moveToward(this.target.x, this.target.y, dt);
       }
+      return;
+    }
+    // 평화 시: 캠프 주변을 어슬렁 순찰 (걷는 모습이 보이도록) — 대형 오브젝트는 웅덩이 고수
+    if (this.def.id !== 'spirit' && this.def.id !== 'sage') {
+      this.wanderT = (this.wanderT ?? Math.random() * 3) - dt;
+      if (this.wanderT <= 0) {
+        this.wanderT = 3.5 + Math.random() * 4;
+        const a = Math.random() * TAU;
+        const r = 60 + Math.random() * 110;
+        this.wanderTo = { x: this.home.x + Math.cos(a) * r, y: this.home.y + Math.sin(a) * r };
+      }
+      if (this.wanderTo) {
+        // 순찰은 느긋하게 (이속 55%)
+        const saveMs = this.ms;
+        this.ms = saveMs * 0.55;
+        this.moving = !this.moveToward(this.wanderTo.x, this.wanderTo.y, dt);
+        this.ms = saveMs;
+        if (!this.moving) this.wanderTo = null;
+      }
     }
   }
 
