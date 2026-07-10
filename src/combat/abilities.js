@@ -51,6 +51,10 @@ export function dealDamage(target, amount, source, game, { showAlways = false, c
   target.lastDamagedAt = game.time;
   target.lastDamagedBy = source;
   target.hitFlash = 0.13; // 피격 화이트 플래시
+  // 넉백 방향 (렌더러 피격 모션용)
+  if (source && source.x !== undefined) {
+    target.hitDir = Math.atan2(target.y - source.y, target.x - source.x);
+  }
 
   // 어시스트 추적 (영웅만)
   if (target.isHero && source && source.isHero) {

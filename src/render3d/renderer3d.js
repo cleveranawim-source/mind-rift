@@ -24,6 +24,18 @@ const MODEL_URLS = {
 };
 const MODEL_HEIGHT = 96; // 영웅 목표 신장 (월드 px)
 
+// 공격 애니메이션 클립 (재리깅 GLB — 클립만 추출해 본 모델에 재생)
+const ATTACK_URLS = {
+  guardian: './assets/models/atk_guardian.glb',
+  flame: './assets/models/atk_flame.glb',
+  gale: './assets/models/atk_gale.glb',
+  moon: './assets/models/atk_moon.glb',
+  // shadow_guardian(비난)은 유령형 하체로 재리깅 실패 → 절차적 런지 폴백 사용
+  shadow_flame: './assets/models/atk_shadow_flame.glb',
+  shadow_gale: './assets/models/atk_shadow_gale.glb',
+  shadow_moon: './assets/models/atk_shadow_moon.glb',
+};
+
 const CAM_H = 820;   // 카메라 높이
 const CAM_D = 580;   // 카메라 뒤 거리 (기울기 결정)
 
@@ -223,6 +235,28 @@ export class Renderer3D {
     return 'loading';
   }
 
+  // 공격 클립만 추출 (재리깅 GLB에서)
+  loadAttackClip(key) {
+    const k = 'atk_' + key;
+    const cached = this.modelLib.get(k);
+    if (cached) return cached;
+    this.modelLib.set(k, 'loading');
+    this.gltfLoader.load(
+      ATTACK_URLS[key],
+      (gltf) => {
+        if (!gltf.animations?.length) return this.modelLib.set(k, 'missing');
+        // 재리깅 스켈레톤은 본 길이가 달라서 position/scale 트랙이 몸을 왜곡시킴
+        // → 회전(quaternion) 트랙만 남기는 리타겟 (본 이름은 동일한 오토리그라 호환)
+        const clip = gltf.animations[0].clone();
+        clip.tracks = clip.tracks.filter((tr) => tr.name.endsWith('.quaternion'));
+        this.modelLib.set(k, { clip });
+      },
+      undefined,
+      () => this.modelLib.set(k, 'missing')
+    );
+    return 'loading';
+  }
+
   // ── 유닛별 액터 인스턴스 (스켈레톤 복제 + 애니메이션 믹서) ──
   getActor(id, key) {
     let a = this.actors.get(id);
@@ -248,9 +282,40 @@ export class Renderer3D {
       action.play();
     }
     this.scene.add(obj);
-    a = { obj, mixer, action, key, yOff: lib.yOff, mats };
+    a = { obj, mixer, action, key, yOff: lib.yOff, mats, baseScale: lib.scale };
     this.actors.set(id, a);
     return a;
+  }
+
+  // 공격 클립 액션 준비 + 트리거 (같은 오토리그 스켈레톤이라 리타겟 없이 재생 가능)
+  syncAttackClip(actor, key, unit) {
+    if (!ATTACK_URLS[key] || actor.attackAction === 'fail') return;
+    const atk = this.loadAttackClip(key);
+    if (typeof atk === 'object' && !actor.attackAction) {
+      try {
+        const act = actor.mixer.clipAction(atk.clip);
+        act.setLoop(THREE.LoopOnce);
+        actor.attackAction = act;
+        actor.mixer.addEventListener('finished', (e) => {
+          if (e.action === actor.attackAction) {
+            actor.attackAction.fadeOut(0.15);
+            if (actor.action) actor.action.reset().fadeIn(0.15).play();
+            actor.attacking = false;
+          }
+        });
+      } catch {
+        actor.attackAction = 'fail';
+      }
+    }
+    // 새 공격 시작 감지 (attackAnim이 다시 차오름)
+    if (actor.attackAction && actor.attackAction !== 'fail') {
+      if ((unit.attackAnim || 0) > (actor.prevAtk ?? 0)) {
+        actor.attacking = true;
+        actor.attackAction.reset().setEffectiveTimeScale(1.7).fadeIn(0.06).play();
+        if (actor.action) actor.action.fadeOut(0.06);
+      }
+      actor.prevAtk = unit.attackAnim || 0;
+    }
   }
 
   getTexture(src) {
@@ -394,13 +459,32 @@ export class Renderer3D {
         actor.obj.rotation.y += dy * Math.min(1, dt * 10);
         // 걷기 클립: 이동 시 재생, 정지 시 느린 숨쉬기
         if (actor.action) {
-          actor.action.timeScale = h.moving ? 1.35 : 0.1;
+          if (!actor.attacking) actor.action.timeScale = h.moving ? 1.35 : 0.1;
         } else {
-          // 클립 없는 모델(여우 등): 절차적 모션 — 통통 걸음 + 몸 흔들기
+          // 클립 없는 모델(여우 등): 절차적 질주 — 크게 뛰고 몸을 흔든다
           actor.obj.position.y = actor.yOff
             + Math.sin(t * 2.4 + h.id) * 2
-            + (h.moving ? Math.abs(Math.sin(t * 10 + h.id)) * 5 : 0);
-          actor.obj.rotation.z = h.moving ? Math.sin(t * 10 + h.id) * 0.07 : Math.sin(t * 1.5 + h.id) * 0.02;
+            + (h.moving ? Math.abs(Math.sin(t * 11 + h.id)) * 9 : 0);
+          actor.obj.rotation.z = h.moving ? Math.sin(t * 11 + h.id) * 0.13 : Math.sin(t * 1.5 + h.id) * 0.03;
+          actor.obj.rotation.x = h.moving ? Math.sin(t * 11 + h.id + 1.2) * 0.09 : 0;
+        }
+        // 공격 클립 (리깅 캐릭터)
+        this.syncAttackClip(actor, modelKey, h);
+        // 공격 클립이 없는 캐릭터(여우·비난)는 절차적 런지
+        if ((!actor.attackAction || actor.attackAction === 'fail') && h.attackAnim > 0) {
+          const k = Math.sin(((0.22 - h.attackAnim) / 0.22) * Math.PI) * 13;
+          actor.obj.position.x += Math.cos(h.facing) * k;
+          actor.obj.position.z += Math.sin(h.facing) * k;
+        }
+        // 피격 넉백 + 휘청
+        if (h.hitFlash > 0 && h.hitDir !== undefined) {
+          const kb = (h.hitFlash / 0.13);
+          actor.obj.position.x += Math.cos(h.hitDir) * kb * 7;
+          actor.obj.position.z += Math.sin(h.hitDir) * kb * 7;
+          actor.obj.rotation.z += kb * 0.07;
+          actor.obj.scale.set(actor.baseScale * (1 + kb * 0.05), actor.baseScale * (1 - kb * 0.07), actor.baseScale);
+        } else {
+          actor.obj.scale.setScalar(actor.baseScale);
         }
         actor.mixer.update(dt);
         // 피격 발광 플래시
@@ -416,13 +500,22 @@ export class Renderer3D {
       }
       this.syncRing('h' + h.id, h.x, h.y, h.radius * 1.5, h.isPlayer ? 0x3fe5a0 : (h.team === 'blue' ? 0x4a9eff : 0xff5555));
     }
-    // 미니언
+    // 미니언 (공격 런지 + 피격 넉백)
     for (const m of game.minions) {
       if (m.dead || !game.isVisible(m)) continue;
       const key = UNIT[m.team === 'blue' ? 'minion_blue' : 'minion_red'];
       const d = m.radius * (m.type === 'cannon' ? 4.0 : 3.4);
       const bob = Math.abs(Math.sin(t * 8 + m.id)) * 3;
-      this.syncSprite(key, 'm' + m.id, m.x, m.y, d * 0.42 + bob, d, Math.cos(m.facing) < 0);
+      let mx = m.x, mz = m.y;
+      if (m.attackAnim > 0) {
+        const k = Math.sin(((0.22 - m.attackAnim) / 0.22) * Math.PI) * 10;
+        mx += Math.cos(m.facing) * k; mz += Math.sin(m.facing) * k;
+      }
+      if (m.hitFlash > 0 && m.hitDir !== undefined) {
+        const kb = m.hitFlash / 0.13;
+        mx += Math.cos(m.hitDir) * kb * 6; mz += Math.sin(m.hitDir) * kb * 6;
+      }
+      this.syncSprite(key, 'm' + m.id, mx, mz, d * 0.42 + bob, d, Math.cos(m.facing) < 0);
     }
     // 타워
     for (const tw of game.towers) {
@@ -434,13 +527,22 @@ export class Renderer3D {
       const key = ENV[tw.team === 'blue' ? 'towerBlue' : 'towerRed'];
       this.syncSprite(key, 't' + tw.id, tw.x, tw.y, 62, 165, false, tw.invulnerable ? 0.55 : 0);
     }
-    // 몬스터
+    // 몬스터 (공격 런지 + 피격 넉백)
     for (const mo of game.monsters) {
       if (mo.dead || !mo.def.id) continue;
       const d = mo.radius * 3.4;
       const isBig = mo.def.id === 'spirit' || mo.def.id === 'sage';
       const bob = isBig ? Math.sin(t * 1.8 + mo.id) * 7 : Math.abs(Math.sin(t * 5 + mo.id)) * 2;
-      this.syncSprite(MON[mo.def.id], 'o' + mo.id, mo.x, mo.y, d * 0.42 + bob, d, Math.cos(mo.facing) < 0);
+      let ox = mo.x, oz = mo.y;
+      if (mo.attackAnim > 0) {
+        const k = Math.sin(((0.22 - mo.attackAnim) / 0.22) * Math.PI) * 12;
+        ox += Math.cos(mo.facing) * k; oz += Math.sin(mo.facing) * k;
+      }
+      if (mo.hitFlash > 0 && mo.hitDir !== undefined) {
+        const kb = mo.hitFlash / 0.13;
+        ox += Math.cos(mo.hitDir) * kb * 7; oz += Math.sin(mo.hitDir) * kb * 7;
+      }
+      this.syncSprite(MON[mo.def.id], 'o' + mo.id, ox, oz, d * 0.42 + bob, d, Math.cos(mo.facing) < 0);
     }
 
     // 넥서스 회전·펄스

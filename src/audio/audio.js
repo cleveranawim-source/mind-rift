@@ -71,18 +71,40 @@ function noise({ dur = 0.1, vol = 0.2, freq = 1200, delay = 0 }) {
 
 // ─── 게임 SFX 카탈로그 ───
 export const SFX = {
-  attackMelee() { noise({ dur: 0.07, vol: 0.25, freq: 900 }); tone({ freq: 180, freqEnd: 90, type: 'triangle', dur: 0.08, vol: 0.2 }); },
-  attackRanged() { tone({ freq: 700, freqEnd: 1400, type: 'sine', dur: 0.09, vol: 0.12 }); },
-  hit() { noise({ dur: 0.06, vol: 0.3, freq: 1600 }); },
+  attackMelee() {
+    noise({ dur: 0.08, vol: 0.28, freq: 900 });
+    noise({ dur: 0.05, vol: 0.18, freq: 2400 });          // 날카로운 크랙
+    tone({ freq: 110, freqEnd: 48, type: 'sine', dur: 0.14, vol: 0.35 }); // 묵직한 저음 임팩트
+    tone({ freq: 180, freqEnd: 90, type: 'triangle', dur: 0.08, vol: 0.18 });
+  },
+  attackRanged() { tone({ freq: 700, freqEnd: 1400, type: 'sine', dur: 0.09, vol: 0.12 }); noise({ dur: 0.06, vol: 0.08, freq: 3200 }); },
+  hit() {
+    noise({ dur: 0.07, vol: 0.3, freq: 1600 });
+    tone({ freq: 220, freqEnd: 110, type: 'sine', dur: 0.1, vol: 0.2 }); // 몸에 맞는 둔탁함
+  },
   abilityQ() { tone({ freq: 520, freqEnd: 980, type: 'sawtooth', dur: 0.18, vol: 0.14 }); noise({ dur: 0.12, vol: 0.1, freq: 2000 }); },
   abilityW() { tone({ freq: 330, freqEnd: 660, type: 'square', dur: 0.22, vol: 0.1 }); },
   dash() { noise({ dur: 0.18, vol: 0.18, freq: 3000 }); tone({ freq: 900, freqEnd: 300, type: 'sine', dur: 0.18, vol: 0.1 }); },
   heal() { tone({ freq: 520, type: 'sine', dur: 0.3, vol: 0.12 }); tone({ freq: 780, type: 'sine', dur: 0.3, vol: 0.1, delay: 0.08 }); },
   shield() { tone({ freq: 440, freqEnd: 880, type: 'triangle', dur: 0.25, vol: 0.12 }); },
-  kill() { tone({ freq: 220, type: 'sawtooth', dur: 0.35, vol: 0.2 }); tone({ freq: 330, type: 'sawtooth', dur: 0.35, vol: 0.16, delay: 0.1 }); tone({ freq: 440, type: 'sawtooth', dur: 0.45, vol: 0.14, delay: 0.2 }); },
-  death() { tone({ freq: 300, freqEnd: 60, type: 'sawtooth', dur: 0.6, vol: 0.2 }); },
+  kill() {
+    // 웅장한 처치 호른 (5도 스택 + 심벌)
+    tone({ freq: 220, type: 'sawtooth', dur: 0.45, vol: 0.2 });
+    tone({ freq: 330, type: 'sawtooth', dur: 0.45, vol: 0.16, delay: 0.08 });
+    tone({ freq: 440, type: 'sawtooth', dur: 0.55, vol: 0.15, delay: 0.16 });
+    tone({ freq: 110, type: 'sine', dur: 0.6, vol: 0.22 });
+    noise({ dur: 0.5, vol: 0.1, freq: 6000, delay: 0.16 }); // 심벌 스월
+  },
+  death() { tone({ freq: 300, freqEnd: 60, type: 'sawtooth', dur: 0.6, vol: 0.2 }); tone({ freq: 90, freqEnd: 35, type: 'sine', dur: 0.7, vol: 0.25 }); },
   towerHit() { noise({ dur: 0.15, vol: 0.35, freq: 500 }); tone({ freq: 120, freqEnd: 60, type: 'triangle', dur: 0.2, vol: 0.3 }); },
-  towerDown() { noise({ dur: 0.6, vol: 0.4, freq: 300 }); tone({ freq: 150, freqEnd: 40, type: 'sawtooth', dur: 0.8, vol: 0.3 }); },
+  towerDown() {
+    // 무너지는 굉음: 저음 럼블 + 잔해
+    noise({ dur: 0.7, vol: 0.4, freq: 300 });
+    noise({ dur: 1.1, vol: 0.25, freq: 140, delay: 0.15 });
+    tone({ freq: 150, freqEnd: 34, type: 'sawtooth', dur: 1.0, vol: 0.3 });
+    tone({ freq: 60, freqEnd: 28, type: 'sine', dur: 1.3, vol: 0.35 });
+    noise({ dur: 0.25, vol: 0.15, freq: 900, delay: 0.5 }); // 돌조각
+  },
   gold() { tone({ freq: 1200, type: 'sine', dur: 0.06, vol: 0.08 }); tone({ freq: 1600, type: 'sine', dur: 0.08, vol: 0.07, delay: 0.05 }); },
   levelUp() { [523, 659, 784, 1047].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.2, vol: 0.12, delay: i * 0.07 })); },
   ping() { tone({ freq: 880, type: 'sine', dur: 0.12, vol: 0.15 }); tone({ freq: 880, type: 'sine', dur: 0.12, vol: 0.12, delay: 0.15 }); },
@@ -116,14 +138,21 @@ let fileSource = null;
 let currentMode = null;
 let schedTimer = null;
 
-// ── D 도리안 진행: Dm → Bb → F → C (신비로운 숲 감성) ──
+// ── D 도리안 진행 (신비로운 숲 감성) — A/B 섹션 8마디 교차 ──
 const NOTE = (n) => 440 * Math.pow(2, (n - 69) / 12); // MIDI → Hz
-const PROG = [
+const PROG_A = [
   { root: 38, chord: [50, 53, 57], scale: [50, 52, 53, 55, 57, 59, 60] }, // Dm
   { root: 34, chord: [46, 50, 53], scale: [46, 48, 50, 53, 55, 57, 58] }, // Bb
   { root: 41, chord: [53, 57, 60], scale: [53, 55, 57, 60, 62, 64, 65] }, // F
   { root: 36, chord: [48, 52, 55], scale: [48, 50, 52, 55, 57, 60, 62] }, // C
 ];
+const PROG_B = [
+  { root: 31, chord: [43, 46, 50], scale: [43, 45, 46, 48, 50, 53, 55] }, // Gm (긴장)
+  { root: 34, chord: [46, 50, 53], scale: [46, 48, 50, 53, 55, 57, 58] }, // Bb
+  { root: 38, chord: [50, 53, 57], scale: [50, 52, 53, 55, 57, 59, 60] }, // Dm
+  { root: 33, chord: [45, 49, 52], scale: [45, 47, 49, 50, 52, 55, 57] }, // A (해결 유도)
+];
+const progFor = (bar) => ((bar % 8) < 4 ? PROG_A : PROG_B)[bar % 4];
 const BPM = 82;
 const BEAT = 60 / BPM;
 const BAR = BEAT * 4;
@@ -215,7 +244,7 @@ function fluteNote(midi, t, dur, vol = 0.05) {
 
 // 한 마디 스케줄링
 function scheduleBar(t, mode) {
-  const step = PROG[barCount % PROG.length];
+  const step = progFor(barCount);
   const isTitle = mode === 'title';
 
   // 패드 (코드 전체)
