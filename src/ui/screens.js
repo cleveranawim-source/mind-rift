@@ -8,7 +8,7 @@ import { champArt, shadowArt, splashArt } from './assets.js';
 const root = () => document.getElementById('ui-root');
 
 // ═══ 타이틀 ═══
-export function showTitle(onStart) {
+export function showTitle(onStart, onClass = null, onTeacher = null) {
   root().innerHTML = `
     <div class="screen title-screen">
       <div class="title-splash" style="background-image:url('${splashArt}')"></div>
@@ -22,7 +22,11 @@ export function showTitle(onStart) {
           마음의 힘을 지닌 다섯 수호자와 함께 그림자 군단의 넥서스를 무너뜨려라.<br>
           진짜 승부는 <b>화면 밖, 너의 마음속</b>에서 벌어진다.
         </p>
-        <button class="btn-primary" id="btn-start">협곡 입장</button>
+        <div class="title-buttons">
+          <button class="btn-primary" id="btn-start">협곡 입장</button>
+          <button class="btn-ghost" id="btn-class">🏫 반 모드</button>
+        </div>
+        <button class="teacher-link" id="btn-teacher">🧑‍🏫 교사 발표모드</button>
         <div class="controls-guide">
           <div><kbd>우클릭</kbd> 이동 / 공격</div>
           <div><kbd>Q</kbd><kbd>W</kbd> 스킬 <kbd>E</kbd> 도약</div>
@@ -38,6 +42,8 @@ export function showTitle(onStart) {
     SFX.click();
     onStart();
   });
+  if (onClass) document.getElementById('btn-class').addEventListener('click', () => { SFX.click(); onClass(); });
+  if (onTeacher) document.getElementById('btn-teacher').addEventListener('click', () => { SFX.click(); onTeacher(); });
 }
 
 // ═══ 챔피언 선택 ═══
@@ -138,7 +144,7 @@ const AREA_INFO = {
   '공동체': { icon: '🏰', color: '#4ad1e8', low: '나 혼자의 게임이 되기 쉬웠다. 팀의 목표를 함께 외쳐보자.', high: '팀을 하나로 묶고 공동의 목표를 향해 이끌었다. 공동체의 수호자!' },
 };
 
-export function showEnd(game, onRestart) {
+export function showEnd(game, onRestart, onTeamResult = null) {
   const p = game.player;
   const victory = game.result === 'victory';
   const area = game.sel.computeReflection();
@@ -199,13 +205,17 @@ export function showEnd(game, onRestart) {
         </div>
 
         <div class="end-buttons">
-          <button class="btn-primary" id="btn-restart">다시 도전</button>
-          <button class="btn-ghost" id="btn-title">챔피언 다시 선택</button>
+          ${onTeamResult
+            ? '<button class="btn-primary" id="btn-team">📡 팀 결과 보기</button><button class="btn-ghost" id="btn-title">처음으로</button>'
+            : '<button class="btn-primary" id="btn-restart">다시 도전</button><button class="btn-ghost" id="btn-title">챔피언 다시 선택</button>'}
         </div>
       </div>
     </div>`;
 
-  document.getElementById('btn-restart').addEventListener('click', () => { SFX.click(); onRestart(false); });
+  const restartBtn = document.getElementById('btn-restart');
+  if (restartBtn) restartBtn.addEventListener('click', () => { SFX.click(); onRestart(false); });
+  const teamBtn = document.getElementById('btn-team');
+  if (teamBtn) teamBtn.addEventListener('click', () => { SFX.click(); onTeamResult(); });
   document.getElementById('btn-title').addEventListener('click', () => { SFX.click(); onRestart(true); });
 }
 

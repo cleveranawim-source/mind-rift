@@ -13,6 +13,7 @@ import { SFX, startMusic, stopMusic, toggleMute } from './audio/audio.js';
 import { envReady, UNIT, MON, loadImg, imgReady } from './ui/assets.js';
 import { Renderer3D } from './render3d/renderer3d.js';
 import { drawUnitBars } from './ui/hud.js';
+import { watchRoom, updateStats, pushEvent, boostMorale, submitResult } from './net/classroom.js';
 
 export class Game {
   constructor(canvas, playerChampId, callbacks = {}) {
@@ -77,6 +78,28 @@ export class Game {
     this.lastKill = { time: -99, count: 0 };
 
     this.sel = new SelSystem(this);
+
+    // ── 반 모드 연결 ──
+    this.classCtx = callbacks.classCtx || null;
+    this._classStatT = 0;
+    this._classEvSeen = 0;
+    if (this.classCtx) {
+      this._classUnwatch = watchRoom(this.classCtx.code, (room) => {
+        // 공유 팀 사기 (서버가 진실)
+        if (typeof room.morale === 'number') {
+          this.sel.morale = clamp(room.morale, 0, 100);
+        }
+        // 팀원 소식 → 킬피드
+        const evs = room.events || [];
+        for (let i = this._classEvSeen; i < evs.length; i++) {
+          const e = evs[i];
+          if (e.n !== this.classCtx.name) {
+            this.feed(`🏫 ${e.n}: ${e.tx}`, e.ty === 'kill' ? '#7de8a8' : e.ty === 'death' ? '#ff9988' : '#9fd8ff');
+          }
+        }
+        this._classEvSeen = evs.length;
+      });
+    }
 
     // ── 카메라 · 입력 ──
     this.vw = 0; this.vh = 0;
@@ -277,6 +300,25 @@ export class Game {
     return false;
   }
 
+  // ═══ 반 모드 브로드캐스트 ═══
+  classEvent(type, text) {
+    if (this.classCtx) pushEvent(this.classCtx.code, this.classCtx.name, type, text);
+  }
+  classMorale(delta) {
+    if (this.classCtx && delta) boostMorale(this.classCtx.code, Math.round(delta));
+  }
+  classSyncStats() {
+    if (!this.classCtx) return;
+    const p = this.player;
+    updateStats(this.classCtx.code, this.classCtx.playerId, {
+      lv: p.level, k: p.kills, d: p.deaths, a: p.assists, cs: p.cs,
+      tilt: Math.round(this.sel.tilt),
+      breaths: this.sel.breathCount,
+      praises: this.sel.pingCounts.praise,
+      nexusPct: Math.round((this.nexus.red.hp / this.nexus.red.maxHp) * 100),
+    });
+  }
+
   // ═══ 알림 ═══
   announce(text, color = '#e8f4ec', sub = null) {
     this.announcement = { text, color, sub, t: 3.2, dur: 3.2 };
@@ -337,6 +379,10 @@ export class Game {
       const killerName = srcHero ? srcHero.name : (source && source.isTower ? '수호 타워' : '협곡');
       this.feed(`${killerName} ⚔ ${unit.name}`, unit.team === this.player.team ? '#ff8877' : '#7de8a8');
 
+      // 반 모드 소식
+      if (srcHero === this.player) this.classEvent('kill', `${unit.name} 처치! ⚔`);
+      else if (unit === this.player) this.classEvent('death', `${srcHero ? srcHero.name : '협곡'}에게 당했다…`);
+
       // 플레이어 관련 연출 + SEL
       if (srcHero === this.player) {
         this.lastKill.count = this.time - this.lastKill.time < 9 ? this.lastKill.count + 1 : 1;
@@ -384,6 +430,7 @@ export class Game {
       } else {
         this.announce('적 타워 파괴!', '#3fe5a0');
         this.sel.addMorale(10);
+        this.classEvent('tower', '적 타워 파괴! 🏰');
       }
       this.feed(`${unit.team === 'blue' ? '마음팀' : '그림자'} 타워 파괴`, '#ffc247');
       return;
@@ -444,6 +491,19 @@ export class Game {
     if (this.over) return;
     this.over = true;
     this.result = victory ? 'victory' : 'defeat';
+    // 반 모드: 결과 제출
+    if (this.classCtx) {
+      const p = this.player;
+      this.classEvent('end', victory ? '그림자 넥서스 격파!! 🏆' : '아쉽게 패배… 🌧');
+      submitResult(this.classCtx.code, this.classCtx.playerId, {
+        win: victory,
+        lv: p.level,
+        ref: this.sel.computeReflection(),
+        k: p.kills, d: p.deaths, a: p.assists, cs: p.cs,
+        breaths: this.sel.breathCount,
+        praises: this.sel.pingCounts.praise,
+      });
+    }
     this.timescale = 0.25;
     stopMusic();
     (victory ? SFX.victory : SFX.defeat)();
@@ -592,6 +652,15 @@ export class Game {
     // 패시브 골드
     for (const h of this.heroes) if (!h.dead) h.gold += 1.9 * dt;
 
+    // 반 모드 스탯 동기화 (5초 주기)
+    if (this.classCtx) {
+      this._classStatT -= dt;
+      if (this._classStatT <= 0) {
+        this._classStatT = 5;
+        this.classSyncStats();
+      }
+    }
+
     // 알림 타이머
     if (this.announcement) {
       this.announcement.t -= Math.min(rawDt, 0.05);
@@ -706,6 +775,7 @@ export class Game {
   }
 
   destroy() {
+    if (this._classUnwatch) this._classUnwatch();
     if (this._raf) cancelAnimationFrame(this._raf);
     for (const [el, ev, fn] of this._listeners || []) el.removeEventListener(ev, fn);
     projectiles.length = 0;

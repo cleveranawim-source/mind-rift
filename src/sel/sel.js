@@ -58,6 +58,8 @@ export class SelSystem {
 
   addMorale(amount) {
     this.morale = clamp(this.morale + amount, 0, 100);
+    // 반 모드: 사기는 반 전체가 공유 (서버 증분)
+    this.game.classMorale?.(amount);
   }
 
   // ── 심호흡 ──
@@ -91,6 +93,7 @@ export class SelSystem {
       spawnParticles({ x: p.x, y: p.y, count: 18, color: '#3fe5a0', speed: 80, life: 1.0, size: 4, gravity: -60, glow: true });
       spawnFloater(p.x, p.y - 60, '마음이 가라앉는다…', { color: '#3fe5a0', size: 15 });
       SFX.breatheDone();
+      this.game.classEvent?.('breath', '심호흡으로 마음을 가다듬었다 🌬');
     }
   }
 
@@ -112,6 +115,7 @@ export class SelSystem {
         spawnFloater(allies[0].x, allies[0].y - 50, `${allies[0].name}: 고마워! 힘난다!`, { color: '#3fe5a0', size: 13 });
       }
       SFX.pingPraise();
+      this.game.classEvent?.('praise', '팀원에게 격려를 보냈다 💚');
     } else {
       if (type === 'gather') {
         this.rallyPoint = { x: wx, y: wy, until: game.time + 5 };
@@ -183,6 +187,7 @@ export class SelSystem {
     this.choiceLog.push({ event: ev.title, choice: c.label, good: c.good });
     if (c.effect) c.effect(this.game, this);
     (c.good ? SFX.choiceGood : SFX.choiceBad)();
+    this.game.classEvent?.('choice', `'${ev.title}' ${c.good ? '💚' : '🌧'} ${c.label}`);
 
     // 피드백 표시 후 재개
     const root = document.getElementById('event-layer');
