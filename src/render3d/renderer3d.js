@@ -396,65 +396,66 @@ export class Renderer3D {
       action.play();
     }
     this.scene.add(obj);
-    a = { obj, mixer, action, key, yOff: -lib.rawMinY * scale, mats, baseScale: scale };
+    // atkBlend: 걷기↔공격 수동 블렌드(0~1). 합이 항상 1이라 rest 포즈(투명/납작) 불가
+    a = { obj, mixer, action, key, yOff: -lib.rawMinY * scale, mats, baseScale: scale, atkBlend: 0, attacking: false };
     this.actors.set(id, a);
     return a;
   }
 
-  // 공격 클립 액션 준비 + 트리거 (같은 오토리그 스켈레톤이라 리타겟 없이 재생 가능)
-  syncAttackClip(actor, key, unit) {
-    if (!ATTACK_URLS[key] || actor.attackAction === 'fail') return;
-    const atk = this.loadAttackClip(key);
-    if (typeof atk === 'object' && !actor.attackAction) {
-      try {
-        // 클립-본 호환성 검증: 본 이름이 80% 이상 일치해야 재생 (아니면 왜곡됨)
-        const bones = new Set();
-        actor.obj.traverse((n) => { if (n.isBone) bones.add(n.name); });
-        const targets = [...new Set(atk.clip.tracks.map((tr) => tr.name.split('.')[0]))];
-        const matched = targets.filter((n) => bones.has(n)).length;
-        if (bones.size === 0 || matched < targets.length * 0.8) {
-          actor.attackAction = 'fail';
-          return;
-        }
-        const act = actor.mixer.clipAction(atk.clip);
-        act.setLoop(THREE.LoopOnce);
-        actor.attackAction = act;
-        actor.mixer.addEventListener('finished', (e) => {
-          if (e.action === actor.attackAction) this.endAttack(actor);
-        });
-      } catch {
-        actor.attackAction = 'fail';
+  // 공격 클립 준비 + 수동 가중치 블렌드 (dt 필요)
+  syncAttackClip(actor, key, unit, dt) {
+    // 공격 클립 1회 준비
+    if (ATTACK_URLS[key] && actor.attackAction === undefined) {
+      const atk = this.loadAttackClip(key);
+      if (atk === 'missing') { actor.attackAction = null; }
+      else if (typeof atk === 'object') {
+        try {
+          // 클립-본 호환성 검증 (80% 일치)
+          const bones = new Set();
+          actor.obj.traverse((n) => { if (n.isBone) bones.add(n.name); });
+          const targets = [...new Set(atk.clip.tracks.map((tr) => tr.name.split('.')[0]))];
+          const matched = targets.filter((n) => bones.has(n)).length;
+          if (bones.size === 0 || matched < targets.length * 0.8) {
+            actor.attackAction = null; // 폴백=런지
+          } else {
+            const act = actor.mixer.clipAction(atk.clip);
+            act.setLoop(THREE.LoopRepeat); // 반복(수동 종료 제어), 항상 play + weight로만 제어
+            act.play();
+            act.setEffectiveWeight(0);
+            act.setEffectiveTimeScale(1.6);
+            actor.attackAction = act;
+            actor.atkClipDur = atk.clip.duration;
+          }
+        } catch { actor.attackAction = null; }
       }
     }
-    if (actor.attackAction && actor.attackAction !== 'fail') {
-      // 공격은 최대 1.15초(클립 기준)만 — 클립이 길어도 걷기가 죽지 않게 강제 복귀
-      if (actor.attacking && actor.attackAction.time > 1.15) this.endAttack(actor);
-      // 첫 공격 중 기하 검증: 포즈가 몸을 찌그러뜨리면 클립 자동 폐기 → 런지 폴백
-      if (actor.attacking && !actor.atkValidated && actor.attackAction.time > 0.25) {
-        actor.atkValidated = true;
-        const box = new THREE.Box3().setFromObject(actor.obj);
-        const bh = box.max.y - box.min.y;
-        const expect = actor.baseScale * (this.modelLib.get(actor.key)?.rawH || 1.7);
-        if (!(bh > expect * 0.55 && bh < expect * 1.9)) {
-          this.endAttack(actor);
-          actor.attackAction.stop();
-          actor.attackAction = 'fail';
-        }
-      }
-      // 새 공격 시작 감지 (attackAnim이 다시 차오름)
-      if ((unit.attackAnim || 0) > (actor.prevAtk ?? 0) && !actor.attacking) {
-        actor.attacking = true;
-        actor.attackAction.reset().setEffectiveTimeScale(1.7).fadeIn(0.06).play();
-        if (actor.action) actor.action.fadeOut(0.06);
-      }
-      actor.prevAtk = unit.attackAnim || 0;
-    }
-  }
 
-  endAttack(actor) {
-    if (actor.attackAction && actor.attackAction !== 'fail') actor.attackAction.fadeOut(0.12);
-    if (actor.action) actor.action.reset().setEffectiveWeight(1).fadeIn(0.12).play();
-    actor.attacking = false;
+    const hasClip = actor.attackAction && actor.attackAction !== null;
+
+    // 새 공격 시작 (attackAnim 상승) → 클립 처음부터, 블렌드 목표 1
+    if ((unit.attackAnim || 0) > (actor.prevAtk ?? 0)) {
+      actor.attacking = true;
+      actor.attackHold = 0.42; // 공격 포즈 유지 시간
+      if (hasClip) actor.attackAction.time = 0;
+    }
+    actor.prevAtk = unit.attackAnim || 0;
+
+    // 공격 유지 타이머
+    if (actor.attacking) {
+      actor.attackHold -= dt;
+      if (actor.attackHold <= 0) actor.attacking = false;
+    }
+
+    // 블렌드 램프 (합=1 보장)
+    const target = (actor.attacking && hasClip) ? 1 : 0;
+    actor.atkBlend += (target - actor.atkBlend) * Math.min(1, dt * 14);
+    if (actor.atkBlend < 0.01) actor.atkBlend = 0;
+    if (hasClip) {
+      actor.attackAction.setEffectiveWeight(actor.atkBlend);
+      if (actor.action) actor.action.setEffectiveWeight(1 - actor.atkBlend);
+    }
+    // 클립 없는 캐릭터는 attacking을 절차 런지용으로만 사용 (걷기 가중치 항상 1)
+    return hasClip;
   }
 
   getTexture(src) {
@@ -628,15 +629,10 @@ export class Renderer3D {
             gu.uGallop.value += ((h.moving ? 1 : 0) - gu.uGallop.value) * Math.min(1, dt * 9);
           }
         }
-        // 공격 클립 (리깅 캐릭터)
-        this.syncAttackClip(actor, modelKey, h);
-        // 자가복구: 공격 크로스페이드가 꼬여 걷기 가중치가 죽으면 되살림 (투명·정지 방지)
-        if (!actor.attacking && actor.action && actor.action.getEffectiveWeight() < 0.05) {
-          if (actor.attackAction && actor.attackAction !== 'fail') actor.attackAction.stop();
-          actor.action.reset().setEffectiveWeight(1).play();
-        }
-        // 공격 클립이 없는 캐릭터(여우·비난)는 절차적 런지
-        if ((!actor.attackAction || actor.attackAction === 'fail') && h.attackAnim > 0) {
+        // 공격 클립 (리깅 캐릭터) — 수동 가중치 블렌드로 합=1 보장
+        const hasAtkClip = this.syncAttackClip(actor, modelKey, h, dt);
+        // 클립 없는 캐릭터(여우·비난)는 절차적 런지
+        if (!hasAtkClip && h.attackAnim > 0) {
           const k = Math.sin(((0.22 - h.attackAnim) / 0.22) * Math.PI) * 13;
           actor.obj.position.x += Math.cos(h.facing) * k;
           actor.obj.position.z += Math.sin(h.facing) * k;
