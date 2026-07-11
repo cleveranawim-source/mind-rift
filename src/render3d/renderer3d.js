@@ -194,8 +194,8 @@ export class Renderer3D {
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environmentIntensity = 0.85;
 
-    // ── 3D 숲 + 절벽 (입체 환경) ──
-    this.buildForest();
+    // ── 절벽 (입체 환경) ──
+    // 3D 콘 숲은 탑다운 시점에서 민짜 덩어리로 보여 제거 — 페인팅 나무가 담당
     this.buildCliffs();
 
     // 유닛 빌보드 풀: unit.id → { sprite }
@@ -380,29 +380,54 @@ export class Renderer3D {
     const atk = this.loadAttackClip(key);
     if (typeof atk === 'object' && !actor.attackAction) {
       try {
+        // 클립-본 호환성 검증: 본 이름이 80% 이상 일치해야 재생 (아니면 왜곡됨)
+        const bones = new Set();
+        actor.obj.traverse((n) => { if (n.isBone) bones.add(n.name); });
+        const targets = [...new Set(atk.clip.tracks.map((tr) => tr.name.split('.')[0]))];
+        const matched = targets.filter((n) => bones.has(n)).length;
+        if (bones.size === 0 || matched < targets.length * 0.8) {
+          actor.attackAction = 'fail';
+          return;
+        }
         const act = actor.mixer.clipAction(atk.clip);
         act.setLoop(THREE.LoopOnce);
         actor.attackAction = act;
         actor.mixer.addEventListener('finished', (e) => {
-          if (e.action === actor.attackAction) {
-            actor.attackAction.fadeOut(0.15);
-            if (actor.action) actor.action.reset().fadeIn(0.15).play();
-            actor.attacking = false;
-          }
+          if (e.action === actor.attackAction) this.endAttack(actor);
         });
       } catch {
         actor.attackAction = 'fail';
       }
     }
-    // 새 공격 시작 감지 (attackAnim이 다시 차오름)
     if (actor.attackAction && actor.attackAction !== 'fail') {
-      if ((unit.attackAnim || 0) > (actor.prevAtk ?? 0)) {
+      // 공격은 최대 1.15초(클립 기준)만 — 클립이 길어도 걷기가 죽지 않게 강제 복귀
+      if (actor.attacking && actor.attackAction.time > 1.15) this.endAttack(actor);
+      // 첫 공격 중 기하 검증: 포즈가 몸을 찌그러뜨리면 클립 자동 폐기 → 런지 폴백
+      if (actor.attacking && !actor.atkValidated && actor.attackAction.time > 0.25) {
+        actor.atkValidated = true;
+        const box = new THREE.Box3().setFromObject(actor.obj);
+        const bh = box.max.y - box.min.y;
+        const expect = actor.baseScale * (this.modelLib.get(actor.key)?.rawH || 1.7);
+        if (!(bh > expect * 0.55 && bh < expect * 1.9)) {
+          this.endAttack(actor);
+          actor.attackAction.stop();
+          actor.attackAction = 'fail';
+        }
+      }
+      // 새 공격 시작 감지 (attackAnim이 다시 차오름)
+      if ((unit.attackAnim || 0) > (actor.prevAtk ?? 0) && !actor.attacking) {
         actor.attacking = true;
         actor.attackAction.reset().setEffectiveTimeScale(1.7).fadeIn(0.06).play();
         if (actor.action) actor.action.fadeOut(0.06);
       }
       actor.prevAtk = unit.attackAnim || 0;
     }
+  }
+
+  endAttack(actor) {
+    if (actor.attackAction && actor.attackAction !== 'fail') actor.attackAction.fadeOut(0.12);
+    if (actor.action) actor.action.reset().setEffectiveWeight(1).fadeIn(0.12).play();
+    actor.attacking = false;
   }
 
   getTexture(src) {
@@ -578,6 +603,11 @@ export class Renderer3D {
         }
         // 공격 클립 (리깅 캐릭터)
         this.syncAttackClip(actor, modelKey, h);
+        // 자가복구: 공격 크로스페이드가 꼬여 걷기 가중치가 죽으면 되살림 (투명·정지 방지)
+        if (!actor.attacking && actor.action && actor.action.getEffectiveWeight() < 0.05) {
+          if (actor.attackAction && actor.attackAction !== 'fail') actor.attackAction.stop();
+          actor.action.reset().setEffectiveWeight(1).play();
+        }
         // 공격 클립이 없는 캐릭터(여우·비난)는 절차적 런지
         if ((!actor.attackAction || actor.attackAction === 'fail') && h.attackAnim > 0) {
           const k = Math.sin(((0.22 - h.attackAnim) / 0.22) * Math.PI) * 13;
