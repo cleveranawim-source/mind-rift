@@ -132,24 +132,21 @@ export class Renderer3D {
     this.fogPlane.renderOrder = 900;
     this.scene.add(this.fogPlane);
 
-    // ── 넥서스: 진짜 3D 회전 크리스탈 ──
+    // ── 넥서스: 일러스트 크리스탈 빌보드 (타워와 같은 방식 — 도형 아님) ──
     this.nexusMeshes = {};
     for (const team of ['blue', 'red']) {
-      const color = team === 'blue' ? 0x4a9eff : 0xff5555;
-      const geo = new THREE.OctahedronGeometry(52);
-      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92 });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.castShadow = true;
-      const wire = new THREE.Mesh(geo.clone(), new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.25 }));
-      mesh.add(wire);
-      mesh.position.set(NEXUS_POS[team].x, 72, NEXUS_POS[team].y);
-      this.scene.add(mesh);
-      // 발밑 글로우 스프라이트
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
+      const D = 300;
+      sprite.scale.set(D, D, 1);
+      sprite.position.set(NEXUS_POS[team].x, D * 0.42, NEXUS_POS[team].y);
+      sprite.userData.nexusKey = team === 'blue' ? 'nexusBlue' : 'nexusRed';
+      this.scene.add(sprite);
+      // 발밑 글로우
       const glow = this.makeGlowSprite(team === 'blue' ? '#4a9eff' : '#ff5555');
-      glow.scale.set(360, 360, 1);
+      glow.scale.set(420, 420, 1);
       glow.position.set(NEXUS_POS[team].x, 8, NEXUS_POS[team].y);
       this.scene.add(glow);
-      this.nexusMeshes[team] = mesh;
+      this.nexusMeshes[team] = sprite;
     }
 
     // ── 조명 (GLB 모델용 — Basic 재질 지형에는 영향 없음) ──
@@ -219,58 +216,67 @@ export class Renderer3D {
   // 매끈한 콘 대신 울퉁불퉁한 둥근 수관 덩어리가 페인팅 나무 위에 얹혀 입체 숲으로 보임
   buildForest() {
     // 캐노피 지오메트리 변형 3종: 이코사구를 노이즈로 변형 + y로 밝기 구움
-    const makeCanopy = (seed) => {
+    const makeCanopy = (seed, hueShift) => {
       const geo = new THREE.IcosahedronGeometry(1, 2);
       const pos = geo.attributes.position;
       const colors = new Float32Array(pos.count * 3);
-      const cLow = new THREE.Color(0x0d2413);  // 아래·그늘
-      const cHigh = new THREE.Color(0x2a5a30); // 위·빛
+      const cLow = new THREE.Color(0x0a1c10);  // 아래·그늘 (깊게)
+      const cHigh = new THREE.Color(0x336339); // 위·빛
+      cLow.offsetHSL(hueShift, 0, 0);
+      cHigh.offsetHSL(hueShift, 0, 0);
       const tmp = new THREE.Color();
       for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-        // 유사 노이즈 변위 (덩어리진 수관)
-        const nz = Math.sin(x * 3.1 + seed) * Math.cos(z * 2.7 + seed * 1.7) * 0.5
-          + Math.sin(y * 4.3 + seed * 2.3) * 0.5;
-        const d = 1 + nz * 0.22;
-        pos.setXYZ(i, x * d, y * d * 0.72, z * d); // 위아래로 살짝 눌린 수관
-        // 높이 기반 명암 + 노이즈 얼룩
-        const t = Math.min(1, Math.max(0, (y * d * 0.72 + 1) / 2)) * 0.85 + nz * 0.12;
+        // 다중 주파수 노이즈 변위 (잎덩어리 실루엣)
+        const n1 = Math.sin(x * 3.1 + seed) * Math.cos(z * 2.7 + seed * 1.7);
+        const n2 = Math.sin(x * 7.9 + z * 6.3 + seed * 3.1) * Math.cos(y * 8.7 + seed);
+        const nz = n1 * 0.6 + n2 * 0.4;
+        const d = 1 + nz * 0.3;
+        pos.setXYZ(i, x * d, y * d * 0.78, z * d);
+        // 높이 명암 + 잎 반점 (정점 해시 스펙클)
+        const speckle = (Math.sin(i * 127.1 + seed * 311.7) * 0.5 + 0.5) * 0.22 - 0.11;
+        const t = Math.min(1, Math.max(0, (y * d * 0.78 + 1) / 2)) * 0.85 + nz * 0.1 + speckle;
         tmp.copy(cLow).lerp(cHigh, Math.min(1, Math.max(0, t)));
         colors[i * 3] = tmp.r; colors[i * 3 + 1] = tmp.g; colors[i * 3 + 2] = tmp.b;
       }
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      geo.computeVertexNormals();
       return geo;
     };
-    const variants = [makeCanopy(1.3), makeCanopy(4.7), makeCanopy(8.2)];
+    const variants = [makeCanopy(1.3, -0.015), makeCanopy(4.7, 0), makeCanopy(8.2, 0.02)];
     const mat = new THREE.MeshBasicMaterial({ vertexColors: true });
 
-    // 나무마다 수관 2덩이 (본체 + 작은 곁가지)
+    // 나무마다 작은 수관 5덩이 군집 (브로콜리) — 거대 단일 덩어리 금지
     const trees = [];
     for (const w of WALLS) {
       for (const t of w.trees) trees.push({ x: w.x + t.dx, z: w.y + t.dy, s: t.s });
     }
-    const meshes = variants.map((g) => new THREE.InstancedMesh(g, mat, trees.length * 2));
+    const LOBES = 5;
+    const meshes = variants.map((g) => new THREE.InstancedMesh(g, mat, trees.length * LOBES));
     const counts = [0, 0, 0];
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const v = new THREE.Vector3();
     trees.forEach((tr, i) => {
-      const r = tr.s * 1.35;          // 수관 반경
-      const hC = tr.s * 1.15;         // 수관 중심 높이
-      const vi = i % 3;
-      q.setFromEuler(new THREE.Euler(0, i * 2.399, Math.sin(i * 5.1) * 0.06));
-      m.compose(v.set(tr.x, hC, tr.z), q, new THREE.Vector3(r, r, r));
-      meshes[vi].setMatrixAt(counts[vi]++, m);
-      // 곁가지 덩이 (작고 낮게, 옆으로)
-      const va = (i * 1.7) % (Math.PI * 2);
-      const v2 = (i + 1) % 3;
-      q.setFromEuler(new THREE.Euler(0, i * 1.1, 0));
-      m.compose(
-        v.set(tr.x + Math.cos(va) * r * 0.8, hC * 0.72, tr.z + Math.sin(va) * r * 0.8),
-        q, new THREE.Vector3(r * 0.55, r * 0.5, r * 0.55)
-      );
-      meshes[v2].setMatrixAt(counts[v2]++, m);
+      // 중앙 꼭대기 덩이
+      const rTop = tr.s * 0.78;
+      const vi0 = i % 3;
+      q.setFromEuler(new THREE.Euler(0, i * 2.399, Math.sin(i * 5.1) * 0.08));
+      m.compose(v.set(tr.x, tr.s * 1.25, tr.z), q, new THREE.Vector3(rTop, rTop, rTop));
+      meshes[vi0].setMatrixAt(counts[vi0]++, m);
+      // 둘레 덩이 4개 (높이·크기·각도 지터)
+      for (let k = 0; k < LOBES - 1; k++) {
+        const a = (k / (LOBES - 1)) * Math.PI * 2 + i * 0.9;
+        const rl = tr.s * (0.52 + ((i * 7 + k * 13) % 10) * 0.028);
+        const dist = tr.s * (0.62 + ((i + k) % 4) * 0.07);
+        const hy = tr.s * (0.78 + ((i * 3 + k) % 5) * 0.09);
+        const vi = (i + k + 1) % 3;
+        q.setFromEuler(new THREE.Euler(Math.sin(a) * 0.1, a * 1.7, Math.cos(a) * 0.1));
+        m.compose(
+          v.set(tr.x + Math.cos(a) * dist, hy, tr.z + Math.sin(a) * dist),
+          q, new THREE.Vector3(rl, rl * 0.9, rl)
+        );
+        meshes[vi].setMatrixAt(counts[vi]++, m);
+      }
     });
     meshes.forEach((mesh, i) => {
       mesh.count = counts[i];
@@ -731,16 +737,18 @@ export class Renderer3D {
       }
     }
 
-    // 넥서스 회전·펄스
+    // 넥서스 부유·상태
     for (const team of ['blue', 'red']) {
-      const mesh = this.nexusMeshes[team];
+      const spr = this.nexusMeshes[team];
       const nx = game.nexus[team];
-      mesh.visible = !nx.dead;
-      mesh.rotation.y = t * 0.7;
-      mesh.position.y = 72 + Math.sin(t * 1.6) * 6;
-      const s = nx.invulnerable ? 0.8 : 1;
-      mesh.scale.set(s, s, s);
-      mesh.material.opacity = nx.invulnerable ? 0.45 : 0.92;
+      spr.visible = !nx.dead;
+      // 텍스처 지연 결착
+      if (!spr.material.map) {
+        const tex = this.getTexture(ENV[spr.userData.nexusKey]);
+        if (tex) { spr.material.map = tex; spr.material.needsUpdate = true; }
+      }
+      spr.position.y = 300 * 0.42 + Math.sin(t * 1.6) * 7;
+      spr.material.color.setScalar(nx.invulnerable ? 0.45 : 1);
     }
 
     // 안 쓴 풀 항목 숨김
