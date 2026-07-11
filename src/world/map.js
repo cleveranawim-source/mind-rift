@@ -299,41 +299,57 @@ export function renderTerrain() {
   drawLane(LANES.mid);
   drawLane(LANES.bot);
 
-  // 캠프 공터
+  // 캠프 공터 (몬스터 순찰 반경에 맞게)
   for (const c of CAMP_DEFS) {
     g.fillStyle = 'rgba(60,55,40,0.55)';
-    g.beginPath(); g.arc(c.x, c.y, c.big ? 130 : 105, 0, TAU); g.fill();
+    g.beginPath(); g.arc(c.x, c.y, (c.big ? 130 : 105) * 1.5, 0, TAU); g.fill();
   }
   // 오브젝트 웅덩이
   for (const o of [SPIRIT_DEF, SAGE_DEF]) {
     g.fillStyle = 'rgba(20,50,60,0.8)';
-    g.beginPath(); g.arc(o.x, o.y, 170, 0, TAU); g.fill();
+    g.beginPath(); g.arc(o.x, o.y, 170 * 1.5, 0, TAU); g.fill();
     g.strokeStyle = 'rgba(100,200,220,0.3)';
-    g.lineWidth = 6;
+    g.lineWidth = 8;
     g.stroke();
   }
 
-  // 기지 플랫폼
-  function drawBase(cx, cy, color, glow) {
+  // 기지 플랫폼 — 맵 스케일에 비례 (원래 비율 복원)
+  function drawBase(cx, cy, color, glow, ring) {
     g.save();
-    const grad = g.createRadialGradient(cx, cy, 40, cx, cy, 420);
+    const R = 300 * S;
+    const grad = g.createRadialGradient(cx, cy, 40, cx, cy, 420 * S);
     grad.addColorStop(0, glow);
     grad.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = grad;
-    g.beginPath(); g.arc(cx, cy, 420, 0, TAU); g.fill();
+    g.beginPath(); g.arc(cx, cy, 420 * S, 0, TAU); g.fill();
     g.fillStyle = color;
-    g.beginPath(); g.arc(cx, cy, 300, 0, TAU); g.fill();
+    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.fill();
+    // 광장 장식: 이중 링 + 룬 점
     g.strokeStyle = 'rgba(255,255,255,0.12)';
-    g.lineWidth = 8;
-    g.beginPath(); g.arc(cx, cy, 300, 0, TAU); g.stroke();
+    g.lineWidth = 10;
+    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.stroke();
+    g.strokeStyle = ring;
+    g.lineWidth = 4;
+    g.beginPath(); g.arc(cx, cy, R * 0.72, 0, TAU); g.stroke();
+    g.fillStyle = ring;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * TAU;
+      g.beginPath();
+      g.arc(cx + Math.cos(a) * R * 0.86, cy + Math.sin(a) * R * 0.86, 7, 0, TAU);
+      g.fill();
+    }
     g.restore();
   }
-  drawBase(NEXUS_POS.blue.x, NEXUS_POS.blue.y, '#16233d', 'rgba(70,120,255,0.18)');
-  drawBase(NEXUS_POS.red.x, NEXUS_POS.red.y, '#3d1616', 'rgba(255,80,70,0.18)');
-  // 분수대
+  drawBase(NEXUS_POS.blue.x, NEXUS_POS.blue.y, '#16233d', 'rgba(70,120,255,0.18)', 'rgba(110,170,255,0.35)');
+  drawBase(NEXUS_POS.red.x, NEXUS_POS.red.y, '#3d1616', 'rgba(255,80,70,0.18)', 'rgba(255,120,100,0.35)');
+  // 분수대 (이중 원 + 물빛)
   for (const [team, f] of Object.entries(FOUNTAIN)) {
-    g.fillStyle = team === 'blue' ? 'rgba(80,140,255,0.35)' : 'rgba(255,90,80,0.35)';
-    g.beginPath(); g.arc(f.x, f.y, 150, 0, TAU); g.fill();
+    const c1 = team === 'blue' ? 'rgba(80,140,255,0.4)' : 'rgba(255,90,80,0.4)';
+    const c2 = team === 'blue' ? 'rgba(140,200,255,0.5)' : 'rgba(255,150,130,0.5)';
+    g.fillStyle = c1;
+    g.beginPath(); g.arc(f.x, f.y, 150 * S, 0, TAU); g.fill();
+    g.fillStyle = c2;
+    g.beginPath(); g.arc(f.x, f.y, 80 * S, 0, TAU); g.fill();
   }
 
   // 수풀 (텍스처 위에서는 은은하게)

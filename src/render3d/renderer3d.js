@@ -194,8 +194,8 @@ export class Renderer3D {
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     this.scene.environmentIntensity = 0.85;
 
-    // ── 절벽 (입체 환경) ──
-    // 3D 콘 숲은 탑다운 시점에서 민짜 덩어리로 보여 제거 — 페인팅 나무가 담당
+    // ── 3D 숲 + 절벽 (입체 환경) ──
+    this.buildForest();
     this.buildCliffs();
 
     // 유닛 빌보드 풀: unit.id → { sprite }
@@ -215,48 +215,69 @@ export class Renderer3D {
     this._ndc = new THREE.Vector2();
   }
 
-  // 로우폴리 나무 숲 — 인스턴싱 2 드로콜
+  // 숲 — 정점 노이즈 캐노피(나무갓) + 구운 명암(정점 컬러, 언릿)
+  // 매끈한 콘 대신 울퉁불퉁한 둥근 수관 덩어리가 페인팅 나무 위에 얹혀 입체 숲으로 보임
   buildForest() {
+    // 캐노피 지오메트리 변형 3종: 이코사구를 노이즈로 변형 + y로 밝기 구움
+    const makeCanopy = (seed) => {
+      const geo = new THREE.IcosahedronGeometry(1, 2);
+      const pos = geo.attributes.position;
+      const colors = new Float32Array(pos.count * 3);
+      const cLow = new THREE.Color(0x0d2413);  // 아래·그늘
+      const cHigh = new THREE.Color(0x2a5a30); // 위·빛
+      const tmp = new THREE.Color();
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        // 유사 노이즈 변위 (덩어리진 수관)
+        const nz = Math.sin(x * 3.1 + seed) * Math.cos(z * 2.7 + seed * 1.7) * 0.5
+          + Math.sin(y * 4.3 + seed * 2.3) * 0.5;
+        const d = 1 + nz * 0.22;
+        pos.setXYZ(i, x * d, y * d * 0.72, z * d); // 위아래로 살짝 눌린 수관
+        // 높이 기반 명암 + 노이즈 얼룩
+        const t = Math.min(1, Math.max(0, (y * d * 0.72 + 1) / 2)) * 0.85 + nz * 0.12;
+        tmp.copy(cLow).lerp(cHigh, Math.min(1, Math.max(0, t)));
+        colors[i * 3] = tmp.r; colors[i * 3 + 1] = tmp.g; colors[i * 3 + 2] = tmp.b;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geo.computeVertexNormals();
+      return geo;
+    };
+    const variants = [makeCanopy(1.3), makeCanopy(4.7), makeCanopy(8.2)];
+    const mat = new THREE.MeshBasicMaterial({ vertexColors: true });
+
+    // 나무마다 수관 2덩이 (본체 + 작은 곁가지)
     const trees = [];
     for (const w of WALLS) {
-      for (const t of w.trees) {
-        trees.push({ x: w.x + t.dx, z: w.y + t.dy, s: t.s });
-      }
+      for (const t of w.trees) trees.push({ x: w.x + t.dx, z: w.y + t.dy, s: t.s });
     }
-    const n = trees.length;
-    const coneGeo = new THREE.ConeGeometry(1, 1, 7);
-    const trunkGeo = new THREE.CylinderGeometry(0.13, 0.2, 1, 5);
-    // 고정 색 2재질 (인스턴스 컬러의 흰색 누락 버그 회피) — 언릿으로 페인팅 지형과 톤 일치
-    const lowMat = new THREE.MeshBasicMaterial({ color: 0x14301c });
-    const topMat = new THREE.MeshBasicMaterial({ color: 0x1e4527 });
-    const trunkMat = new THREE.MeshBasicMaterial({ color: 0x241a10 });
-    const lows = new THREE.InstancedMesh(coneGeo, lowMat, n);
-    const tops = new THREE.InstancedMesh(coneGeo, topMat, n);
-    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, n);
+    const meshes = variants.map((g) => new THREE.InstancedMesh(g, mat, trees.length * 2));
+    const counts = [0, 0, 0];
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
-    const up = new THREE.Vector3();
+    const v = new THREE.Vector3();
     trees.forEach((tr, i) => {
-      const h = tr.s * 3.4;
-      const r = tr.s * 1.5;
-      const lean = (Math.sin(i * 7.3) * 0.05);
-      q.setFromEuler(new THREE.Euler(lean, i * 1.7, 0));
-      // 아래 콘 (몸통 숲)
-      m.compose(up.set(tr.x, h * 0.42, tr.z), q, new THREE.Vector3(r, h * 0.6, r));
-      lows.setMatrixAt(i, m);
-      // 위 콘
-      m.compose(up.set(tr.x, h * 0.74, tr.z), q, new THREE.Vector3(r * 0.66, h * 0.48, r * 0.66));
-      tops.setMatrixAt(i, m);
-      // 줄기
-      m.compose(up.set(tr.x, h * 0.16, tr.z), new THREE.Quaternion(), new THREE.Vector3(tr.s, h * 0.34, tr.s));
-      trunks.setMatrixAt(i, m);
+      const r = tr.s * 1.35;          // 수관 반경
+      const hC = tr.s * 1.15;         // 수관 중심 높이
+      const vi = i % 3;
+      q.setFromEuler(new THREE.Euler(0, i * 2.399, Math.sin(i * 5.1) * 0.06));
+      m.compose(v.set(tr.x, hC, tr.z), q, new THREE.Vector3(r, r, r));
+      meshes[vi].setMatrixAt(counts[vi]++, m);
+      // 곁가지 덩이 (작고 낮게, 옆으로)
+      const va = (i * 1.7) % (Math.PI * 2);
+      const v2 = (i + 1) % 3;
+      q.setFromEuler(new THREE.Euler(0, i * 1.1, 0));
+      m.compose(
+        v.set(tr.x + Math.cos(va) * r * 0.8, hC * 0.72, tr.z + Math.sin(va) * r * 0.8),
+        q, new THREE.Vector3(r * 0.55, r * 0.5, r * 0.55)
+      );
+      meshes[v2].setMatrixAt(counts[v2]++, m);
     });
-    lows.instanceMatrix.needsUpdate = true;
-    tops.instanceMatrix.needsUpdate = true;
-    trunks.instanceMatrix.needsUpdate = true;
-    lows.castShadow = true;
-    tops.castShadow = true;
-    this.scene.add(lows, tops, trunks);
+    meshes.forEach((mesh, i) => {
+      mesh.count = counts[i];
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.castShadow = true;
+      this.scene.add(mesh);
+    });
   }
 
   // 맵 가장자리 절벽 — 카메라가 남쪽에서 보므로 남쪽은 낮게, 나머지는 적당히
