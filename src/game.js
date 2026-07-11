@@ -14,6 +14,7 @@ import { envReady, UNIT, MON, loadImg, imgReady } from './ui/assets.js';
 import { Renderer3D } from './render3d/renderer3d.js';
 import { drawUnitBars } from './ui/hud.js';
 import { watchRoom, updateStats, pushEvent, boostMorale, submitResult } from './net/classroom.js';
+import { isTouchDevice, initTouchControls, destroyTouchControls, applyStick } from './ui/touch.js';
 
 export class Game {
   constructor(canvas, playerChampId, callbacks = {}) {
@@ -120,6 +121,13 @@ export class Game {
     this._raf = null;
     this._last = performance.now();
 
+    // 터치 기기면 온스크린 컨트롤
+    this.touchMode = isTouchDevice();
+    if (this.touchMode) {
+      document.body.classList.add('touch-mode');
+      initTouchControls(this);
+    }
+
     this.announce('마음의 협곡에 오신 것을 환영합니다', '#3fe5a0', '그림자 군단의 넥서스를 파괴하세요');
     startMusic('game');
   }
@@ -218,14 +226,18 @@ export class Game {
       p.recalling = false;
       return;
     }
+    this.commandAt(this.getAimWorld());
+  }
 
-    const w = this.getAimWorld();
-    // 적 유닛 클릭 판정
+  // 월드 지점 클릭/탭 → 적이면 공격, 아니면 이동 (터치·마우스 공용)
+  commandAt(w) {
+    const p = this.player;
+    if (p.dead) return;
     const clickables = [
       ...this.unitsOfTeam(p.team === 'blue' ? 'red' : 'blue', true),
       ...this.monsters.filter((m) => !m.dead),
     ];
-    let best = null, bestD = 45;
+    let best = null, bestD = 55;
     for (const u of clickables) {
       if (u.dead || u.invulnerable) continue;
       const d = dist(w.x, w.y, u.x, u.y) - u.radius;
@@ -240,6 +252,44 @@ export class Game {
       p.target = null;
       p.moveTarget = { x: w.x, y: w.y };
       spawnRing(w.x, w.y, '#3fe5a0', 18, 0.35);
+    }
+  }
+
+  // 조이스틱 방향 이동 (정규화된 dx,dy) — 플레이어 앞쪽 지점을 목표로
+  moveByStick(dx, dy) {
+    const p = this.player;
+    if (p.dead || p.recalling) return;
+    p.target = null;
+    p.moveTarget = { x: p.x + dx * 400, y: p.y + dy * 400 };
+  }
+
+  // 스킬 시전 (터치·키보드 공용). aimDir 있으면 그 방향, 없으면 가장 가까운 적 방향
+  castSkill(slot, aimDir = null) {
+    const p = this.player;
+    if (p.dead) return;
+    let aim;
+    if (aimDir) {
+      aim = { x: p.x + aimDir.x * 500, y: p.y + aimDir.y * 500 };
+    } else {
+      // 자동 조준: 사거리 내 가장 가까운 적
+      const foes = [
+        ...this.heroesOfTeam(p.team === 'blue' ? 'red' : 'blue'),
+        ...this.minions.filter((m) => m.team !== p.team),
+        ...this.monsters,
+      ].filter((u) => !u.dead && !u.invulnerable);
+      let best = null, bd = 900;
+      for (const u of foes) { const d = dist(p.x, p.y, u.x, u.y); if (d < bd) { bd = d; best = u; } }
+      aim = best ? { x: best.x, y: best.y } : { x: p.x + Math.cos(p.facing) * 400, y: p.y + Math.sin(p.facing) * 400 };
+    }
+    if (this.sel.tiltTier() === 2) { aim.x += Math.sin(this.time * 13.7) * 26; aim.y += Math.cos(this.time * 11.3) * 26; }
+    castAbility(p, slot, this, aim);
+  }
+
+  startRecall() {
+    if (!this.player.dead && !this.player.recalling) {
+      this.player.recalling = true;
+      this.player.recallT = 0;
+      SFX.recall();
     }
   }
 
@@ -616,6 +666,9 @@ export class Game {
       this.announce('⛈ 협곡의 폭풍', '#b08ae8', '미니언들이 점점 강해집니다 — 승부의 시간!');
     }
 
+    // 터치 조이스틱 이동
+    if (this.touchMode) applyStick(this);
+
     // 우클릭 홀드 → 이동 갱신
     if (this.input.rightHeld && !this.player.dead) {
       this.input.rightHeldT -= dt;
@@ -778,6 +831,8 @@ export class Game {
     if (this._classUnwatch) this._classUnwatch();
     if (this._raf) cancelAnimationFrame(this._raf);
     for (const [el, ev, fn] of this._listeners || []) el.removeEventListener(ev, fn);
+    for (const [el, ev, fn] of this._touchListeners || []) el.removeEventListener(ev, fn);
+    if (this.touchMode) { destroyTouchControls(); document.body.classList.remove('touch-mode'); }
     projectiles.length = 0;
     telegraphs.length = 0;
     clearFX();

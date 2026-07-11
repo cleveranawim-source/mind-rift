@@ -8,6 +8,11 @@ import { champArt, drawPortraitCircle } from './assets.js';
 export const MINIMAP = { size: 210, pad: 14 }; // 우하단
 
 export function minimapRect(game) {
+  // 터치 모드: 우상단(하단은 스킬 버튼 차지). 데스크톱: 우하단
+  if (game.touchMode) {
+    const s = Math.min(150, game.vw * 0.34);
+    return { x: game.vw - s - 10, y: 58, s };
+  }
   const s = MINIMAP.size;
   return { x: game.vw - s - MINIMAP.pad, y: game.vh - s - MINIMAP.pad, s };
 }
@@ -20,7 +25,7 @@ export function drawHUD(ctx, game) {
 
   drawTiltGauge(ctx, game);
   drawTopBar(ctx, game);
-  drawSkillBar(ctx, game);
+  if (!game.touchMode) drawSkillBar(ctx, game); // 터치 모드는 온스크린 버튼이 대체
   drawMinimap(ctx, game);
   drawKillFeed(ctx, game);
   drawAnnouncer(ctx, game);
