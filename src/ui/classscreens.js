@@ -2,6 +2,7 @@
 import { CHAMPIONS, champById } from '../data/champions.js';
 import { champArt } from './assets.js';
 import { SFX } from '../audio/audio.js';
+import { WORLD, NEXUS_POS } from '../world/map.js';
 import {
   createRoom, joinRoom, watchRoom, pickChamp, setReady,
   startMatch, leaveRoom, endRoom,
@@ -9,7 +10,11 @@ import {
 
 const root = () => document.getElementById('ui-root');
 let unwatch = null;
-function stopWatch() { if (unwatch) { unwatch(); unwatch = null; } }
+function stopWatch() { if (unwatch) { unwatch(); unwatch = null; } spectateClose(); }
+
+// 관전 상태 (교사가 특정 학생 협곡을 실시간 미니맵으로 지켜봄)
+let specPid = null;
+let latestRoom = null;
 
 const AREA_KEYS = ['자기', '마음건강', '대인관계', '공동체'];
 const AREA_COLORS = { 자기: '#e8a33d', 마음건강: '#9b6dff', 대인관계: '#ffd93d', 공동체: '#4ad1e8' };
@@ -283,6 +288,7 @@ function renderDash(code, onBack) {
     </div>`;
 
   unwatch = watchRoom(code, (room) => {
+    latestRoom = room;
     // 사기
     const m = Math.max(0, Math.min(100, room.morale || 0));
     const mf = document.getElementById('td-morale');
@@ -291,11 +297,13 @@ function renderDash(code, onBack) {
       mf.style.background = m > 65 ? 'var(--mint)' : m > 40 ? '#ffc247' : '#ff5544';
     }
     // 플레이어 카드
-    const players = Object.values(room.players || {});
+    const entries = Object.entries(room.players || {});
+    const players = entries.map(([, p]) => p);
     const active = players.filter((p) => !isGone(p, room));
-    document.getElementById('td-players').innerHTML = players.map((p) => {
+    document.getElementById('td-players').innerHTML = entries.map(([pid, p]) => {
       const champ = p.champ ? champById(p.champ) : null;
       const tiltPct = Math.min(100, p.tilt || 0);
+      const playing = room.status === 'playing' && !p.done && !isGone(p, room);
       const state = p.done ? (p.win ? '🏆 완료' : '🌧 완료')
         : isGone(p, room) ? '⚠️ 연결 끊김'
         : room.status === 'playing' ? '⚔ 전투 중' : '대기';
@@ -306,8 +314,11 @@ function renderDash(code, onBack) {
           <div class="td-tilt"><div style="width:${tiltPct}%"></div></div>
           <small>🌬${p.breaths} 💚${p.praises} · ${state}</small>
         </div>
+        ${p.snap ? `<button class="td-spectate" data-pid="${pid}">👁 관전</button>` : ''}
       </div>`;
     }).join('') || '<p class="class-sub">아직 입장한 학생이 없어요</p>';
+    // 관전 중이면 최신 스냅샷으로 다시 그림
+    if (specPid) spectateRedraw();
 
     // 피드 (최근 24개)
     const evs = (room.events || []).slice(-24).reverse();
@@ -336,7 +347,124 @@ function renderDash(code, onBack) {
     }
   });
 
+  document.getElementById('td-players').addEventListener('click', (e) => {
+    const btn = e.target.closest('.td-spectate');
+    if (btn) spectateOpen(btn.dataset.pid);
+  });
+
   document.getElementById('td-exit').addEventListener('click', () => { stopWatch(); onBack(); });
+}
+
+// ═══ 학생 경기 실시간 관전 (스냅샷 미니맵) ═══
+const TAU = Math.PI * 2;
+function spectateOpen(pid) {
+  specPid = pid;
+  let ov = document.getElementById('spectate');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'spectate';
+    ov.className = 'spectate';
+    ov.innerHTML = `
+      <div class="spec-card">
+        <div class="spec-head">
+          <b id="spec-name">관전</b>
+          <span class="spec-hint">2.5초 간격 실시간 갱신</span>
+          <button class="spec-close" id="spec-close">✕</button>
+        </div>
+        <canvas id="spec-canvas" width="480" height="480"></canvas>
+        <div class="spec-stats" id="spec-stats"></div>
+      </div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#spec-close').addEventListener('click', spectateClose);
+    ov.addEventListener('click', (e) => { if (e.target === ov) spectateClose(); });
+  }
+  spectateRedraw();
+}
+function spectateClose() {
+  specPid = null;
+  const ov = document.getElementById('spectate');
+  if (ov) ov.remove();
+}
+function spectateRedraw() {
+  const ov = document.getElementById('spectate');
+  if (!ov || !specPid || !latestRoom) return;
+  const p = (latestRoom.players || {})[specPid];
+  if (!p) { spectateClose(); return; }
+  const champ = p.champ ? champById(p.champ) : null;
+  ov.querySelector('#spec-name').textContent = `👁 ${p.name}${champ ? ' · ' + champ.name : ''}`;
+  const canvas = ov.querySelector('#spec-canvas');
+  drawSpectateMap(canvas.getContext('2d'), canvas.width, p.snap);
+  // 하단 스탯
+  const s = p.snap;
+  const stale = s ? (Date.now() - (p.seen || 0) > 8000) : true;
+  const stats = ov.querySelector('#spec-stats');
+  if (!s) {
+    stats.innerHTML = `<div class="spec-wait">스냅샷 대기 중… (학생이 경기를 시작하면 표시돼요)</div>`;
+    return;
+  }
+  const mmss = (t) => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  const finished = s.over === 'W' ? '🏆 승리로 종료' : s.over === 'L' ? '🌧 패배로 종료' : null;
+  stats.innerHTML = `
+    <div class="spec-line">
+      <span class="spec-chip blue">우리 ${s.sc[0]}</span>
+      <span class="spec-clock">${mmss(s.t)}</span>
+      <span class="spec-chip red">그림자 ${s.sc[1]}</span>
+    </div>
+    <div class="spec-line small">
+      <span>🏰 타워 ${s.tw[0]} : ${s.tw[1]}</span>
+      <span>💎 넥서스 ${s.nx[0]}% : ${s.nx[1]}%</span>
+    </div>
+    <div class="spec-tiltrow"><span>멘탈</span><div class="spec-tiltbar"><div style="width:${Math.min(100, s.tl)}%;background:${s.tl > 66 ? '#ff5544' : s.tl > 33 ? '#ffc247' : '#3fe5a0'}"></div></div></div>
+    ${s.ev ? '<div class="spec-ev">🧭 선택의 순간 진행 중</div>' : ''}
+    ${finished ? `<div class="spec-ev done">${finished}</div>` : ''}
+    ${stale && !finished ? '<div class="spec-stale">⏸ 신호 지연 중…</div>' : ''}`;
+}
+function drawSpectateMap(ctx, size, snap) {
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = '#0a1410';
+  ctx.fillRect(0, 0, size, size);
+  const T = (wx, wy) => [(wx / WORLD) * size, size - (wy / WORLD) * size]; // y반전: 블루 기지 좌하단
+  // 강 (y=x 대각)
+  ctx.strokeStyle = 'rgba(90,150,200,0.16)';
+  ctx.lineWidth = size * 0.055;
+  const a = T(0, 0), b = T(WORLD, WORLD);
+  ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+  // 테두리
+  ctx.strokeStyle = 'rgba(63,229,160,0.2)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(1, 1, size - 2, size - 2);
+  // 넥서스
+  for (const [pos, col] of [[NEXUS_POS.blue, '#4a9eff'], [NEXUS_POS.red, '#ff5544']]) {
+    const [cx, cy] = T(pos.x, pos.y);
+    ctx.fillStyle = col;
+    ctx.fillRect(cx - 7, cy - 7, 14, 14);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(cx - 7, cy - 7, 14, 14);
+  }
+  if (!snap || !snap.h) return;
+  // 영웅 점
+  for (const h of snap.h) {
+    const [cx, cy] = T(h.x, h.y);
+    const isBlue = h.T === 'b';
+    const col = isBlue ? '#3fe5a0' : '#ff6b6b';
+    const me = h.me === 1;
+    const r = me ? size * 0.025 : size * 0.016;
+    if (h.hp <= 0) { // 사망: 흐린 원
+      ctx.globalAlpha = 0.35; ctx.strokeStyle = col; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
+      continue;
+    }
+    if (me) { // 학생 본인: 흰 링 강조
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(cx, cy, r + 3, 0, TAU); ctx.stroke();
+    }
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+    // HP 링
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, r + 1.5, -Math.PI / 2, -Math.PI / 2 + TAU * (h.hp / 100)); ctx.stroke();
+  }
 }
 
 export function stopClassWatch() { stopWatch(); }

@@ -160,6 +160,18 @@ export function updateStats(code, playerId, stats) {
   return updateDoc(roomRef(code), patch).catch(() => {});
 }
 
+// 관전용 경량 스냅샷 (2.5초 스로틀 — 영웅 위치·HP·점수 등 압축)
+const snapThrottle = { last: 0 };
+export function pushSnapshot(code, playerId, snap) {
+  const now = Date.now();
+  if (now - snapThrottle.last < 2500) return Promise.resolve();
+  snapThrottle.last = now;
+  return updateDoc(roomRef(code), {
+    [`players.${playerId}.snap`]: snap,
+    [`players.${playerId}.seen`]: now,
+  }).catch(() => {});
+}
+
 // 이벤트 큐 (2초 배치 플러시 — 문서 쓰기 경합 완화)
 const evQueue = [];
 let evTimer = null;

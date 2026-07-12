@@ -13,7 +13,7 @@ import { SFX, startMusic, stopMusic, toggleMute, playStinger } from './audio/aud
 import { envReady, UNIT, MON, loadImg, imgReady } from './ui/assets.js';
 import { Renderer3D } from './render3d/renderer3d.js';
 import { drawUnitBars } from './ui/hud.js';
-import { watchRoom, updateStats, pushEvent, boostMorale, submitResult } from './net/classroom.js';
+import { watchRoom, updateStats, pushEvent, boostMorale, submitResult, pushSnapshot } from './net/classroom.js';
 import { isTouchDevice, initTouchControls, destroyTouchControls, applyStick } from './ui/touch.js';
 
 export class Game {
@@ -83,6 +83,7 @@ export class Game {
     // ── 반 모드 연결 ──
     this.classCtx = callbacks.classCtx || null;
     this._classStatT = 0;
+    this._classSnapT = 1.5; // 첫 스냅샷은 1.5초 후
     this._classEvSeen = 0;
     if (this.classCtx) {
       this._classUnwatch = watchRoom(this.classCtx.code, (room) => {
@@ -367,6 +368,31 @@ export class Game {
       praises: this.sel.pingCounts.praise,
       nexusPct: Math.round((this.nexus.red.hp / this.nexus.red.maxHp) * 100),
     });
+  }
+  // 교사 관전용 경량 스냅샷 (영웅 위치·HP·점수·타워·넥서스·틸트)
+  classSyncSnapshot() {
+    if (!this.classCtx) return;
+    const towersAlive = (team) => this.towers.filter((t) => t.team === team && !t.dead).length;
+    const snap = {
+      t: Math.round(this.time),
+      h: this.heroes.map((h) => ({
+        T: h.team === 'blue' ? 'b' : 'r',
+        x: Math.round(h.x), y: Math.round(h.y),
+        hp: h.dead ? 0 : Math.round((h.hp / h.maxHp) * 100),
+        lv: h.level,
+        me: h === this.player ? 1 : 0,
+      })),
+      sc: [this.teamKills.blue, this.teamKills.red],
+      tw: [towersAlive('blue'), towersAlive('red')],
+      nx: [
+        Math.round((this.nexus.blue.hp / this.nexus.blue.maxHp) * 100),
+        Math.round((this.nexus.red.hp / this.nexus.red.maxHp) * 100),
+      ],
+      tl: Math.round(this.sel.tilt),
+      ev: this.sel.activeEvent ? 1 : 0,
+      over: this.over ? (this.result === 'victory' ? 'W' : 'L') : 0,
+    };
+    pushSnapshot(this.classCtx.code, this.classCtx.playerId, snap);
   }
 
   // ═══ 알림 ═══
@@ -705,12 +731,17 @@ export class Game {
     // 패시브 골드
     for (const h of this.heroes) if (!h.dead) h.gold += 1.9 * dt;
 
-    // 반 모드 스탯 동기화 (5초 주기)
+    // 반 모드 스탯 동기화 (5초 주기) + 관전 스냅샷 (2.5초 주기)
     if (this.classCtx) {
       this._classStatT -= dt;
       if (this._classStatT <= 0) {
         this._classStatT = 5;
         this.classSyncStats();
+      }
+      this._classSnapT -= dt;
+      if (this._classSnapT <= 0) {
+        this._classSnapT = 2.5;
+        this.classSyncSnapshot();
       }
     }
 
