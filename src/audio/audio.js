@@ -7,6 +7,26 @@ let sfxGain = null;
 let musicGain = null;
 let enabled = true;
 
+// ── 볼륨/뮤트 설정 (SFX·BGM 독립, localStorage 저장) ──
+const AUDIO_DEFAULTS = { sfxVol: 0.9, musicVol: 0.35, sfxMuted: false, musicMuted: false };
+let audioSettings = { ...AUDIO_DEFAULTS };
+try {
+  const saved = JSON.parse(localStorage.getItem('rift_audio') || '{}');
+  audioSettings = { ...AUDIO_DEFAULTS, ...saved };
+} catch {}
+function saveAudioSettings() {
+  try { localStorage.setItem('rift_audio', JSON.stringify(audioSettings)); } catch {}
+}
+function applyAudioSettings() {
+  if (sfxGain) sfxGain.gain.value = audioSettings.sfxMuted ? 0 : audioSettings.sfxVol;
+  if (musicGain) musicGain.gain.value = audioSettings.musicMuted ? 0 : audioSettings.musicVol;
+}
+export function getAudioSettings() { return { ...audioSettings }; }
+export function setSfxVolume(v) { audioSettings.sfxVol = Math.max(0, Math.min(1, v)); if (v > 0) audioSettings.sfxMuted = false; applyAudioSettings(); saveAudioSettings(); }
+export function setMusicVolume(v) { audioSettings.musicVol = Math.max(0, Math.min(1, v)); if (v > 0) audioSettings.musicMuted = false; applyAudioSettings(); saveAudioSettings(); }
+export function setSfxMuted(m) { audioSettings.sfxMuted = !!m; applyAudioSettings(); saveAudioSettings(); }
+export function setMusicMuted(m) { audioSettings.musicMuted = !!m; applyAudioSettings(); saveAudioSettings(); }
+
 export function initAudio() {
   if (ctx) return;
   try {
@@ -20,6 +40,7 @@ export function initAudio() {
     musicGain = ctx.createGain();
     musicGain.gain.value = 0.35;
     musicGain.connect(master);
+    applyAudioSettings(); // 저장된 볼륨/뮤트 반영
   } catch (e) {
     enabled = false;
   }

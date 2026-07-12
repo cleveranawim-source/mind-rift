@@ -2,7 +2,7 @@
 import { Game } from './game.js';
 import { showTitle, showPick, showEnd, clearScreen, initShop, destroyShop } from './ui/screens.js';
 import { showClassJoin, showLobby, showClassResult, showTeacherDash, stopClassWatch } from './ui/classscreens.js';
-import { initAudio, resumeAudio, startMusic } from './audio/audio.js';
+import { initAudio, resumeAudio, startMusic, SFX, getAudioSettings, setSfxVolume, setMusicVolume, setSfxMuted, setMusicMuted } from './audio/audio.js';
 import { preloadArt } from './ui/assets.js';
 
 preloadArt();
@@ -74,11 +74,13 @@ function installExitButton() {
   exitBtn.textContent = '☰';
   exitBtn.addEventListener('click', confirmExit);
   document.body.appendChild(exitBtn);
+  if (settingsBtn) settingsBtn.style.display = 'none'; // 인게임엔 메뉴 기어 숨김(나가기 창에서 접근)
 }
 function removeExitButton() {
   if (exitBtn) { exitBtn.remove(); exitBtn = null; }
   const c = document.getElementById('exit-confirm');
   if (c) c.remove();
+  if (settingsBtn) settingsBtn.style.display = '';
 }
 function confirmExit() {
   if (!game || game.over || document.getElementById('exit-confirm')) return;
@@ -96,11 +98,82 @@ function confirmExit() {
         <button class="btn-ghost" id="exit-no">계속 할게요</button>
         <button class="btn-danger" id="exit-yes">나가기</button>
       </div>
+      <button class="exit-sound-link" id="exit-sound">🎧 사운드 설정</button>
     </div>`;
   document.body.appendChild(box);
   const close = () => { box.remove(); if (game) game.timescale = savedTs; };
   box.querySelector('#exit-no').addEventListener('click', close);
   box.querySelector('#exit-yes').addEventListener('click', () => { box.remove(); gotoTitle(); });
+  box.querySelector('#exit-sound').addEventListener('click', openSettings);
+  box.addEventListener('click', (e) => { if (e.target === box) close(); });
+}
+
+// ── 사운드 설정 (⚙ 기어: 메뉴 화면 상시, 인게임은 나가기 창에서) ──
+let settingsBtn = null;
+function createSettingsButton() {
+  if (settingsBtn) return;
+  settingsBtn = document.createElement('button');
+  settingsBtn.id = 'settings-btn';
+  settingsBtn.className = 'settings-btn';
+  settingsBtn.setAttribute('aria-label', '사운드 설정');
+  settingsBtn.textContent = '⚙';
+  settingsBtn.addEventListener('click', () => { initAudio(); resumeAudio(); openSettings(); });
+  document.body.appendChild(settingsBtn);
+}
+function openSettings() {
+  if (document.getElementById('settings-panel')) return;
+  initAudio();
+  const pct = (v) => Math.round(v * 100);
+  const box = document.createElement('div');
+  box.id = 'settings-panel';
+  box.className = 'settings-panel';
+  const row = (k, icon, label) => {
+    const s = getAudioSettings();
+    const muted = k === 'music' ? s.musicMuted : s.sfxMuted;
+    const vol = k === 'music' ? s.musicVol : s.sfxVol;
+    return `<div class="snd-row" data-k="${k}">
+      <button class="snd-toggle ${muted ? 'off' : ''}" data-k="${k}">${muted ? '🔇' : icon}</button>
+      <span class="snd-label">${label}</span>
+      <input type="range" min="0" max="100" value="${pct(vol)}" data-k="${k}" class="snd-slider">
+      <span class="snd-val" data-k="${k}">${muted ? '꺼짐' : pct(vol) + '%'}</span>
+    </div>`;
+  };
+  box.innerHTML = `
+    <div class="settings-card">
+      <h3>🎧 사운드 설정</h3>
+      ${row('music', '🎵', '배경음악')}
+      ${row('sfx', '🔊', '효과음')}
+      <button class="btn-ghost sm" id="settings-close">닫기</button>
+    </div>`;
+  document.body.appendChild(box);
+  const refresh = (k) => {
+    const s = getAudioSettings();
+    const muted = k === 'music' ? s.musicMuted : s.sfxMuted;
+    const vol = k === 'music' ? s.musicVol : s.sfxVol;
+    const tog = box.querySelector(`.snd-toggle[data-k="${k}"]`);
+    tog.classList.toggle('off', muted);
+    tog.textContent = muted ? '🔇' : (k === 'music' ? '🎵' : '🔊');
+    box.querySelector(`.snd-slider[data-k="${k}"]`).value = pct(vol);
+    box.querySelector(`.snd-val[data-k="${k}"]`).textContent = muted ? '꺼짐' : pct(vol) + '%';
+  };
+  box.querySelectorAll('.snd-slider').forEach((sl) => {
+    sl.addEventListener('input', () => {
+      const k = sl.dataset.k, v = +sl.value / 100;
+      if (k === 'music') setMusicVolume(v); else setSfxVolume(v);
+      refresh(k);
+      if (k === 'sfx' && +sl.value > 0) SFX.ping(); // 미리듣기
+    });
+  });
+  box.querySelectorAll('.snd-toggle').forEach((tg) => {
+    tg.addEventListener('click', () => {
+      const k = tg.dataset.k, s = getAudioSettings();
+      const nowMuted = !(k === 'music' ? s.musicMuted : s.sfxMuted);
+      if (k === 'music') setMusicMuted(nowMuted); else setSfxMuted(nowMuted);
+      refresh(k);
+    });
+  });
+  const close = () => box.remove();
+  box.querySelector('#settings-close').addEventListener('click', close);
   box.addEventListener('click', (e) => { if (e.target === box) close(); });
 }
 
@@ -158,6 +231,8 @@ function offerResume(saved) {
     bar.remove();
   });
 }
+
+createSettingsButton(); // 메뉴 화면 상시 사운드 기어
 
 // 교사용 바로가기: index.html#teacher
 if (location.hash === '#teacher') gotoTeacher();
