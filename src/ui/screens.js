@@ -4,6 +4,7 @@ import { FOUNTAIN } from '../world/map.js';
 import { dist } from '../core/math.js';
 import { SFX } from '../audio/audio.js';
 import { champArt, shadowArt, splashArt } from './assets.js';
+import { setMuted } from '../audio/audio.js';
 
 const root = () => document.getElementById('ui-root');
 
@@ -59,9 +60,11 @@ export function showTeaserModal() {
       <video class="teaser-video" src="./assets/video/teaser.mp4" controls autoplay playsinline></video>
     </div>`;
   document.body.appendChild(layer);
+  setMuted(true); // 게임 BGM 음소거 (티저 자체 음악과 겹치지 않게)
   const video = layer.querySelector('.teaser-video');
   const close = () => {
     try { video.pause(); } catch {}
+    setMuted(false); // 게임 사운드 복구
     layer.remove();
     window.removeEventListener('keydown', onKey);
   };
