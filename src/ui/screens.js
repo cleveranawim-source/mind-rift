@@ -140,7 +140,7 @@ export function initShop(game) {
             const owned = p.items.filter((x) => x.id === it.id).length;
             const disabled = p.gold < it.cost || (it.unique && owned > 0);
             return `<button class="shop-item ${disabled ? 'disabled' : ''}" data-id="${it.id}">
-              <span class="item-icon">${it.icon}</span>
+              <span class="item-icon"><img src="./assets/items/${it.id}.png" alt="" onerror="this.replaceWith(document.createTextNode('${it.icon}'))"></span>
               <span class="item-info"><b>${it.name}</b>${owned ? ` ×${owned}` : ''}<small>${it.desc}</small></span>
               <span class="item-cost">${it.cost}G</span>
             </button>`;

@@ -38,6 +38,13 @@ export const UNIT = {
   minion_red: `${ART_BASE}env/unit_minion_red.png`,
 };
 
+// 스킬 아이콘 (힉스필드 생성 · 원형 엠블럼) — key: guardian_Q, fox_W, dash_E, recall_B ...
+export const SKILL_ICON_BASE = './assets/skills/';
+export const skillIcon = (key) => `${SKILL_ICON_BASE}${key}.png`;
+// 상점 아이템 아이콘 (힉스필드 생성 · 투명 배경)
+export const ITEM_ICON_BASE = './assets/items/';
+export const itemIcon = (id) => `${ITEM_ICON_BASE}${id}.png`;
+
 // 몬스터 스프라이트 (지형 렌더와 무관하게 개별 로드)
 export const MON = {
   calm: `${ART_BASE}env/mon_calm.png`,
@@ -71,6 +78,12 @@ export function preloadArt() {
   for (const src of Object.values(ENV)) loadImg(src);
   for (const src of Object.values(MON)) loadImg(src);
   for (const src of Object.values(UNIT)) loadImg(src);
+  // 스킬 아이콘 (챔피언별 Q/W + 공용 도약/귀환)
+  for (const c of CHAMPIONS) { loadImg(skillIcon(`${c.id}_Q`)); loadImg(skillIcon(`${c.id}_W`)); }
+  loadImg(skillIcon('dash_E'));
+  loadImg(skillIcon('recall_B'));
+  // 상점 아이템 아이콘
+  for (const id of ['sword','armor','boots','pendant','orb','crystal']) loadImg(itemIcon(id));
 }
 
 // 원형 클리핑으로 초상 그리기 (캔버스 HUD용) — 얼굴이 위쪽에 있는 2:3 초상 기준 크롭

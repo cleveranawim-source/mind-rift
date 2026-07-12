@@ -329,7 +329,8 @@ kbd {
 }
 .shop-item:hover:not(.disabled) { border-color: var(--mint); }
 .shop-item.disabled { opacity: 0.4; cursor: default; }
-.item-icon { font-size: 20px; }
+.item-icon { font-size: 20px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.item-icon img { width: 44px; height: 44px; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.55)); }
 .item-info { flex: 1; font-size: 12.5px; font-weight: 700; display: flex; flex-direction: column; }
 .item-info small { font-weight: 400; color: var(--text-dim); font-size: 11px; }
 .item-cost { font-size: 12px; font-weight: 800; color: var(--gold); }
@@ -690,6 +691,7 @@ kbd {
   overflow: hidden;
 }
 .tc-skill b { font-size: 22px; font-weight: 900; line-height: 1; color: var(--c, #3fe5a0); }
+.tc-skill b img { width: 34px; height: 34px; object-fit: contain; display: block; }
 .tc-skill small { font-size: 9px; color: var(--text-dim); margin-top: 2px; max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tc-attack { width: 84px; height: 84px; border-color: #ffcf40; }
 .tc-attack b { font-size: 30px; color: #ffcf40; }

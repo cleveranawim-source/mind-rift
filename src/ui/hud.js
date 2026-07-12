@@ -3,7 +3,7 @@ import { clamp, TAU, dist } from '../core/math.js';
 import { WORLD, LANES, NEXUS_POS } from '../world/map.js';
 import { DASH } from '../data/champions.js';
 import { TEAM_COLOR } from '../entities/units.js';
-import { champArt, drawPortraitCircle } from './assets.js';
+import { champArt, drawPortraitCircle, loadImg, imgReady, skillIcon } from './assets.js';
 
 export const MINIMAP = { size: 210, pad: 14 }; // 우하단
 
@@ -202,28 +202,30 @@ function drawSkillBar(ctx, game) {
     ctx.strokeStyle = s.recall && game.player.recalling ? '#3fe5a0' : 'rgba(255,255,255,0.15)';
     ctx.lineWidth = 1.5;
     roundRect(ctx, sx, sy, slotW, slotW, 9); ctx.stroke();
-    // 아이콘 (스킬 이모지 — 없으면 이름 첫 글자 폴백)
-    const icon = s.recall ? '🏠' : (s.def.emoji || s.def.name[0]);
-    const isEmoji = s.recall || !!s.def.emoji;
+    // 아이콘 — 힉스필드 생성 스킬 아이콘(우선), 미로드 시 이모지 폴백
     const noMana = !s.recall && p.mana < s.def.mana;
+    const iconKey = s.recall ? 'recall_B' : s.key === 'E' ? 'dash_E' : `${p.champ.id}_${s.key}`;
+    const iconImg = loadImg(skillIcon(iconKey));
     ctx.textAlign = 'center';
-    if (isEmoji) {
+    if (imgReady(iconImg)) {
+      ctx.save();
+      roundRect(ctx, sx, sy, slotW, slotW, 9); ctx.clip();
+      ctx.globalAlpha = noMana ? 0.4 : 1;
+      ctx.drawImage(iconImg, sx, sy, slotW, slotW);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    } else {
+      const icon = s.recall ? '🏠' : (s.def.emoji || s.def.name[0]);
       const cx = sx + slotW / 2, cy = sy + slotW / 2;
-      // 아이콘 뒤 은은한 원반 — 대비 확보(색·흑백 렌더 모두 대응)
       const bg = ctx.createRadialGradient(cx, cy - 3, 3, cx, cy, slotW * 0.5);
       bg.addColorStop(0, noMana ? 'rgba(90,110,150,0.28)' : 'rgba(63,229,160,0.24)');
       bg.addColorStop(1, 'rgba(63,229,160,0)');
       ctx.fillStyle = bg;
       ctx.beginPath(); ctx.arc(cx, cy, slotW * 0.45, 0, TAU); ctx.fill();
-      // 이모지는 fillStyle로 색을 못 바꾸므로 마나부족은 반투명으로 표현
       ctx.font = '27px "Noto Sans KR", sans-serif';
       ctx.globalAlpha = noMana ? 0.4 : 1;
       ctx.fillText(icon, cx, sy + 38);
       ctx.globalAlpha = 1;
-    } else {
-      ctx.font = 'bold 21px "Noto Sans KR", sans-serif';
-      ctx.fillStyle = noMana ? '#5577cc' : p.color;
-      ctx.fillText(icon, sx + slotW / 2, sy + 34);
     }
     // 쿨다운 오버레이
     if (s.cd > 0) {
