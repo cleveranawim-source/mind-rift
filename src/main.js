@@ -63,6 +63,21 @@ function startGame(champId, classCtx = null) {
   window.__game = game; // 개발·디버그용 핸들
 }
 
+// ── 관전 모드: 무플레이어 자동 시범경기 (교사 기기에서 실제 경기 관전) ──
+function startObserver() {
+  clearScreen();
+  destroyShop();
+  stopClassWatch();
+  if (game) game.destroy();
+  game = new Game(canvas, lastChampId, {
+    observer: true,
+    onEnd: () => { removeExitButton(); gotoTitle(); },
+  });
+  game.start();
+  installExitButton();
+  window.__game = game;
+}
+
 // ── 게임 중 나가기 (SEL: 홧김 이탈 방지를 위해 확인창을 한 번 거침) ──
 let exitBtn = null;
 function installExitButton() {
@@ -210,7 +225,7 @@ function gotoTitle() {
   destroyShop();
   stopClassWatch();
   startMusic('title');
-  showTitle(() => gotoPick(), () => gotoClass(), () => gotoTeacher());
+  showTitle(() => gotoPick(), () => gotoClass(), () => gotoTeacher(), () => startObserver());
 }
 
 // ── 튕김 복구: 진행 중이던 반 모드 세션 이어하기 ──
@@ -237,7 +252,7 @@ createSettingsButton(); // 메뉴 화면 상시 사운드 기어
 // 교사용 바로가기: index.html#teacher
 if (location.hash === '#teacher') gotoTeacher();
 else {
-  showTitle(() => gotoPick(), () => gotoClass(), () => gotoTeacher());
+  showTitle(() => gotoPick(), () => gotoClass(), () => gotoTeacher(), () => startObserver());
   const saved = loadClassSession();
   if (saved) offerResume(saved);
 }

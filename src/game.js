@@ -22,6 +22,7 @@ export class Game {
     this.overlay = document.getElementById('overlay');
     this.ctx = this.overlay.getContext('2d'); // 2D 오버레이 (HUD·이펙트)
     this.callbacks = callbacks;
+    this.observer = !!callbacks.observer; // 관전 모드: 무플레이어·전원 AI·감독 카메라
     this.time = 0;
     this.timescale = 1;
     this.over = false;
@@ -57,6 +58,9 @@ export class Game {
       if (isPlayer) this.player = blue;
       this.heroes.push(new Hero(champ, 'red'));
     }
+    if (this.observer && this.player) this.player.isPlayer = false; // 관전: 전원 AI로
+    this.camFocus = null;
+    this._camHoldT = 0;
     this.minions = [];
     this.towers = TOWER_DEFS.map((d) => new Tower(d, this));
     this.nexus = { blue: new Nexus('blue', this), red: new Nexus('red', this) };
@@ -140,6 +144,7 @@ export class Game {
     const on = (el, ev, fn, opt) => { el.addEventListener(ev, fn, opt); this._listeners.push([el, ev, fn]); };
 
     on(c, 'contextmenu', (e) => e.preventDefault());
+    if (this.observer) { on(window, 'resize', () => this.resize()); return; } // 관전: 플레이 입력 없음
     on(c, 'mousemove', (e) => {
       const r = c.getBoundingClientRect();
       this.input.mx = e.clientX - r.left;
@@ -393,6 +398,43 @@ export class Game {
       over: this.over ? (this.result === 'victory' ? 'W' : 'L') : 0,
     };
     pushSnapshot(this.classCtx.code, this.classCtx.playerId, snap);
+  }
+
+  // ═══ 관전 감독 카메라 — 가장 뜨거운 교전을 따라감 ═══
+  updateDirectorCam(dt) {
+    const desired = this.pickCamFocus();
+    if (!this.camFocus) { this.camFocus = { x: desired.x, y: desired.y }; this._camHoldT = 2.2; return; }
+    this._camHoldT -= dt;
+    const d = Math.hypot(desired.x - this.camFocus.x, desired.y - this.camFocus.y);
+    if (d < 750) { // 같은 교전이 이동 → 부드럽게 따라감
+      this.camFocus.x = desired.x; this.camFocus.y = desired.y;
+    } else if (this._camHoldT <= 0) { // 새 교전으로 컷 전환(최소 유지시간 후)
+      this.camFocus.x = desired.x; this.camFocus.y = desired.y;
+      this._camHoldT = 2.4;
+    }
+  }
+  pickCamFocus() {
+    const alive = this.heroes.filter((h) => !h.dead);
+    if (!alive.length) return this.camFocus || { x: WORLD / 2, y: WORLD / 2 };
+    // 서로 다른 팀 영웅쌍 중 근접 + 주변 밀집(=대규모 교전)을 최우선
+    let best = null, bestScore = -1;
+    for (const a of alive) {
+      for (const b of alive) {
+        if (a.team === b.team) continue;
+        const gap = Math.hypot(a.x - b.x, a.y - b.y);
+        if (gap > 1200) continue;
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        let near = 0;
+        for (const h of alive) if (Math.hypot(h.x - mx, h.y - my) < 950) near++;
+        const score = near * 2000 - gap;
+        if (score > bestScore) { bestScore = score; best = { x: mx, y: my }; }
+      }
+    }
+    if (best) return best;
+    // 교전 없음 → 전체 영웅 중심
+    let sx = 0, sy = 0;
+    for (const h of alive) { sx += h.x; sy += h.y; }
+    return { x: sx / alive.length, y: sy / alive.length };
   }
 
   // ═══ 알림 ═══
@@ -692,11 +734,14 @@ export class Game {
       this.announce('⛈ 협곡의 폭풍', '#b08ae8', '미니언들이 점점 강해집니다 — 승부의 시간!');
     }
 
+    // 관전 감독 카메라 (교전 지점 자동 추적)
+    if (this.observer) this.updateDirectorCam(dt);
+
     // 터치 조이스틱 이동
-    if (this.touchMode) applyStick(this);
+    if (this.touchMode && !this.observer) applyStick(this);
 
     // 우클릭 홀드 → 이동 갱신
-    if (this.input.rightHeld && !this.player.dead) {
+    if (!this.observer && this.input.rightHeld && !this.player.dead) {
       this.input.rightHeldT -= dt;
       if (this.input.rightHeldT <= 0) {
         this.input.rightHeldT = 0.15;
@@ -822,6 +867,7 @@ export class Game {
   fillFog() {
     const fc = this.fogCtx;
     const S = 400;
+    if (this.observer) { fc.clearRect(0, 0, S, S); return; } // 관전: 전장 전체 시야
     const k = S / WORLD;
     fc.globalCompositeOperation = 'source-over';
     fc.clearRect(0, 0, S, S);

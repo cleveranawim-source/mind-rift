@@ -9,7 +9,7 @@ import { setMuted } from '../audio/audio.js';
 const root = () => document.getElementById('ui-root');
 
 // ═══ 타이틀 ═══
-export function showTitle(onStart, onClass = null, onTeacher = null) {
+export function showTitle(onStart, onClass = null, onTeacher = null, onObserver = null) {
   root().innerHTML = `
     <div class="screen title-screen">
       <div class="title-splash" style="background-image:url('${splashArt}')"></div>
@@ -29,6 +29,7 @@ export function showTitle(onStart, onClass = null, onTeacher = null) {
           <button class="btn-ghost" id="btn-teaser">▶ 티저 영상</button>
         </div>
         <button class="teacher-link" id="btn-teacher">🧑‍🏫 교사 발표모드</button>
+        <button class="teacher-link" id="btn-observer">👁 관전 모드 (자동 시범경기)</button>
         <div class="controls-guide">
           <div><kbd>우클릭</kbd> 이동 / 공격</div>
           <div><kbd>Q</kbd><kbd>W</kbd> 스킬 <kbd>E</kbd> 도약</div>
@@ -46,6 +47,7 @@ export function showTitle(onStart, onClass = null, onTeacher = null) {
   });
   if (onClass) document.getElementById('btn-class').addEventListener('click', () => { SFX.click(); onClass(); });
   if (onTeacher) document.getElementById('btn-teacher').addEventListener('click', () => { SFX.click(); onTeacher(); });
+  if (onObserver) document.getElementById('btn-observer').addEventListener('click', () => { SFX.click(); onObserver(); });
   document.getElementById('btn-teaser').addEventListener('click', () => { SFX.click(); showTeaserModal(); });
 }
 

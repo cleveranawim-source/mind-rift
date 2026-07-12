@@ -230,7 +230,7 @@ export class SelSystem {
     }
     if (this.rallyPoint && g.time > this.rallyPoint.until) this.rallyPoint = null;
 
-    this.checkEvents();
+    if (!g.observer) this.checkEvents(); // 관전 모드는 선택 이벤트 모달 없음
   }
 
   // ── 성찰 결과 계산 (0~100) ──

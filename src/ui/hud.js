@@ -23,19 +23,38 @@ export function drawHUD(ctx, game) {
   ctx.save();
   ctx.textBaseline = 'alphabetic';
 
-  drawTiltGauge(ctx, game);
+  if (!game.observer) drawTiltGauge(ctx, game);
   drawTopBar(ctx, game);
-  if (!game.touchMode) drawSkillBar(ctx, game); // 터치 모드는 온스크린 버튼이 대체
+  if (!game.touchMode && !game.observer) drawSkillBar(ctx, game); // 터치 모드는 온스크린 버튼이 대체
   drawMinimap(ctx, game);
   drawKillFeed(ctx, game);
   drawAnnouncer(ctx, game);
-  drawTiltVignette(ctx, game);
-  if (game.sel.breathing) drawBreathOverlay(ctx, game);
-  if (p.dead) drawDeathOverlay(ctx, game);
+  if (!game.observer) drawTiltVignette(ctx, game);
+  if (game.sel.breathing && !game.observer) drawBreathOverlay(ctx, game);
+  if (p.dead && !game.observer) drawDeathOverlay(ctx, game);
   if (game.sel.pingWheel) drawPingWheel(ctx, game);
   drawObjectiveBanner(ctx, game);
+  if (game.observer) drawObserverBadge(ctx, game);
 
   ctx.restore();
+}
+
+// ── 관전 모드 배지 (좌상단) ──
+function drawObserverBadge(ctx, game) {
+  const x = 18, y = 18;
+  ctx.fillStyle = 'rgba(8,14,10,0.75)';
+  roundRect(ctx, x, y, 168, 34, 10); ctx.fill();
+  ctx.strokeStyle = 'rgba(63,229,160,0.35)';
+  ctx.lineWidth = 1;
+  roundRect(ctx, x, y, 168, 34, 10); ctx.stroke();
+  ctx.fillStyle = '#3fe5a0';
+  ctx.font = 'bold 14px "Noto Sans KR", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('👁 관전 모드', x + 12, y + 22);
+  // 라이브 점(깜빡임)
+  const blink = 0.5 + 0.5 * Math.sin(game.time * 4);
+  ctx.fillStyle = `rgba(255,80,80,${0.4 + blink * 0.6})`;
+  ctx.beginPath(); ctx.arc(x + 150, y + 17, 4, 0, TAU); ctx.fill();
 }
 
 // ── 멘탈 게이지 (좌상단) ──

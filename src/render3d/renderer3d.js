@@ -573,9 +573,9 @@ export class Renderer3D {
   render(game) {
     if (!this.clock) this.clock = new THREE.Clock();
     const dt = Math.min(this.clock.getDelta(), 0.05) * game.timescale;
-    const p = game.player;
-    // 카메라 추적 (부드럽게) + 셰이크
-    this.camTarget.lerp(new THREE.Vector3(p.x, 0, p.y), 0.12);
+    // 카메라 추적 (부드럽게) + 셰이크 — 관전 모드는 감독 카메라(camFocus) 사용
+    const foc = (game.observer && game.camFocus) ? game.camFocus : game.player;
+    this.camTarget.lerp(new THREE.Vector3(foc.x, 0, foc.y), game.observer ? 0.055 : 0.12);
     const zoomK = Math.max(0.9, Math.min(1.25, 1450 / this.vw));
     this.camera.position.set(
       this.camTarget.x + shake.x * 0.8,
