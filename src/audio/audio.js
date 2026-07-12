@@ -31,8 +31,8 @@ export function resumeAudio() {
 
 function now() { return ctx ? ctx.currentTime : 0; }
 
-// 기본 톤 발생기
-function tone({ freq = 440, freqEnd = null, type = 'sine', dur = 0.15, vol = 0.3, attack = 0.005, delay = 0 }) {
+// 기본 톤 발생기 (옵션: lp=로우패스 컷오프, lpEnd=컷오프 스윕, q=필터 Q)
+function tone({ freq = 440, freqEnd = null, type = 'sine', dur = 0.15, vol = 0.3, attack = 0.005, delay = 0, lp = null, lpEnd = null, q = 0.7 }) {
   if (!ctx || !enabled) return;
   const t0 = now() + delay;
   const osc = ctx.createOscillator();
@@ -43,13 +43,23 @@ function tone({ freq = 440, freqEnd = null, type = 'sine', dur = 0.15, vol = 0.3
   g.gain.setValueAtTime(0, t0);
   g.gain.linearRampToValueAtTime(vol, t0 + attack);
   g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-  osc.connect(g).connect(sfxGain);
+  osc.connect(g);
+  if (lp != null) {
+    const bq = ctx.createBiquadFilter();
+    bq.type = 'lowpass';
+    bq.frequency.setValueAtTime(lp, t0);
+    if (lpEnd != null) bq.frequency.exponentialRampToValueAtTime(Math.max(40, lpEnd), t0 + dur);
+    bq.Q.value = q;
+    g.connect(bq).connect(sfxGain);
+  } else {
+    g.connect(sfxGain);
+  }
   osc.start(t0);
   osc.stop(t0 + dur + 0.05);
 }
 
-// 노이즈 버스트 (타격감)
-function noise({ dur = 0.1, vol = 0.2, freq = 1200, delay = 0 }) {
+// 노이즈 버스트 (타격감) — type: bandpass|lowpass|highpass, freqEnd로 필터 스윕
+function noise({ dur = 0.1, vol = 0.2, freq = 1200, freqEnd = null, delay = 0, type = 'bandpass', q = 0.8, attack = 0 }) {
   if (!ctx || !enabled) return;
   const t0 = now() + delay;
   const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
@@ -59,11 +69,13 @@ function noise({ dur = 0.1, vol = 0.2, freq = 1200, delay = 0 }) {
   const src = ctx.createBufferSource();
   src.buffer = buf;
   const filter = ctx.createBiquadFilter();
-  filter.type = 'bandpass';
-  filter.frequency.value = freq;
-  filter.Q.value = 0.8;
+  filter.type = type;
+  filter.frequency.setValueAtTime(freq, t0);
+  if (freqEnd != null) filter.frequency.exponentialRampToValueAtTime(Math.max(40, freqEnd), t0 + dur);
+  filter.Q.value = q;
   const g = ctx.createGain();
-  g.gain.setValueAtTime(vol, t0);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(vol, t0 + Math.max(0.001, attack));
   g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
   src.connect(filter).connect(g).connect(sfxGain);
   src.start(t0);
@@ -71,55 +83,108 @@ function noise({ dur = 0.1, vol = 0.2, freq = 1200, delay = 0 }) {
 
 // ─── 게임 SFX 카탈로그 ───
 export const SFX = {
+  // ── 기본 공격 ── 스윙 whoosh + 묵직한 바디 + 크랙
   attackMelee() {
-    noise({ dur: 0.08, vol: 0.28, freq: 900 });
-    noise({ dur: 0.05, vol: 0.18, freq: 2400 });          // 날카로운 크랙
-    tone({ freq: 110, freqEnd: 48, type: 'sine', dur: 0.14, vol: 0.35 }); // 묵직한 저음 임팩트
-    tone({ freq: 180, freqEnd: 90, type: 'triangle', dur: 0.08, vol: 0.18 });
+    noise({ dur: 0.06, vol: 0.2, freq: 3400, freqEnd: 900, type: 'highpass', q: 0.5 });
+    tone({ freq: 135, freqEnd: 55, type: 'sine', dur: 0.12, vol: 0.34, lp: 800 });
+    tone({ freq: 250, freqEnd: 150, type: 'triangle', dur: 0.06, vol: 0.13 });
   },
-  attackRanged() { tone({ freq: 700, freqEnd: 1400, type: 'sine', dur: 0.09, vol: 0.12 }); noise({ dur: 0.06, vol: 0.08, freq: 3200 }); },
+  attackRanged() {
+    tone({ freq: 640, freqEnd: 1500, type: 'sawtooth', dur: 0.1, vol: 0.12, lp: 2600, lpEnd: 1200 });
+    noise({ dur: 0.05, vol: 0.06, freq: 4400, type: 'highpass' });
+  },
   hit() {
-    noise({ dur: 0.07, vol: 0.3, freq: 1600 });
-    tone({ freq: 220, freqEnd: 110, type: 'sine', dur: 0.1, vol: 0.2 }); // 몸에 맞는 둔탁함
+    noise({ dur: 0.06, vol: 0.22, freq: 1200, freqEnd: 400, type: 'lowpass', q: 0.6 });
+    tone({ freq: 200, freqEnd: 90, type: 'sine', dur: 0.1, vol: 0.19, lp: 700 });
   },
-  abilityQ() { tone({ freq: 520, freqEnd: 980, type: 'sawtooth', dur: 0.18, vol: 0.14 }); noise({ dur: 0.12, vol: 0.1, freq: 2000 }); },
-  abilityW() { tone({ freq: 330, freqEnd: 660, type: 'square', dur: 0.22, vol: 0.1 }); },
-  dash() { noise({ dur: 0.18, vol: 0.18, freq: 3000 }); tone({ freq: 900, freqEnd: 300, type: 'sine', dur: 0.18, vol: 0.1 }); },
-  heal() { tone({ freq: 520, type: 'sine', dur: 0.3, vol: 0.12 }); tone({ freq: 780, type: 'sine', dur: 0.3, vol: 0.1, delay: 0.08 }); },
-  shield() { tone({ freq: 440, freqEnd: 880, type: 'triangle', dur: 0.25, vol: 0.12 }); },
+  // ── 스킬 ──
+  abilityQ() {
+    tone({ freq: 300, freqEnd: 900, type: 'sawtooth', dur: 0.2, vol: 0.12, lp: 1600, lpEnd: 3400 }); // 차징 상승
+    tone({ freq: 940, type: 'sine', dur: 0.12, vol: 0.08, delay: 0.16 });                            // 발사 반짝
+    noise({ dur: 0.1, vol: 0.07, freq: 2600, type: 'bandpass', delay: 0.15 });
+  },
+  abilityW() {
+    tone({ freq: 330, freqEnd: 495, type: 'triangle', dur: 0.3, vol: 0.11, attack: 0.04, lp: 1600 }); // 보호막 스웰
+    tone({ freq: 660, type: 'sine', dur: 0.4, vol: 0.055, delay: 0.05 });
+    tone({ freq: 990, type: 'sine', dur: 0.35, vol: 0.035, delay: 0.12 });
+  },
+  dash() {
+    noise({ dur: 0.22, vol: 0.15, freq: 5200, freqEnd: 500, type: 'highpass', q: 0.4 }); // 공기 가르는 whoosh
+    tone({ freq: 720, freqEnd: 240, type: 'sine', dur: 0.18, vol: 0.08, lp: 1500 });
+  },
+  heal() {
+    [523, 659, 784].forEach((f, i) => tone({ freq: f, type: 'sine', dur: 0.5, vol: 0.085, delay: i * 0.06, attack: 0.02 }));
+    tone({ freq: 1568, type: 'sine', dur: 0.4, vol: 0.03, delay: 0.14 }); // 반짝 하모닉
+  },
+  shield() {
+    tone({ freq: 400, freqEnd: 800, type: 'triangle', dur: 0.28, vol: 0.11, lp: 2000 });
+    tone({ freq: 1200, type: 'sine', dur: 0.22, vol: 0.045, delay: 0.06 });
+  },
+  // ── 처치·죽음 ── 브라스 스택 + 서브붐 + 심벌
   kill() {
-    // 웅장한 처치 호른 (5도 스택 + 심벌)
-    tone({ freq: 220, type: 'sawtooth', dur: 0.45, vol: 0.2 });
-    tone({ freq: 330, type: 'sawtooth', dur: 0.45, vol: 0.16, delay: 0.08 });
-    tone({ freq: 440, type: 'sawtooth', dur: 0.55, vol: 0.15, delay: 0.16 });
-    tone({ freq: 110, type: 'sine', dur: 0.6, vol: 0.22 });
-    noise({ dur: 0.5, vol: 0.1, freq: 6000, delay: 0.16 }); // 심벌 스월
+    tone({ freq: 175, type: 'sawtooth', dur: 0.5, vol: 0.15, lp: 1400, attack: 0.01 });
+    tone({ freq: 262, type: 'sawtooth', dur: 0.5, vol: 0.12, lp: 1600, delay: 0.07 });
+    tone({ freq: 349, type: 'sawtooth', dur: 0.6, vol: 0.11, lp: 1800, delay: 0.14 });
+    tone({ freq: 87, type: 'sine', dur: 0.7, vol: 0.24 });
+    noise({ dur: 0.6, vol: 0.08, freq: 7000, type: 'highpass', delay: 0.14 });
   },
-  death() { tone({ freq: 300, freqEnd: 60, type: 'sawtooth', dur: 0.6, vol: 0.2 }); tone({ freq: 90, freqEnd: 35, type: 'sine', dur: 0.7, vol: 0.25 }); },
-  towerHit() { noise({ dur: 0.15, vol: 0.35, freq: 500 }); tone({ freq: 120, freqEnd: 60, type: 'triangle', dur: 0.2, vol: 0.3 }); },
+  death() {
+    tone({ freq: 300, freqEnd: 70, type: 'sawtooth', dur: 0.6, vol: 0.17, lp: 1200, lpEnd: 300 });
+    tone({ freq: 95, freqEnd: 35, type: 'sine', dur: 0.75, vol: 0.22 });
+  },
+  minionDie() {
+    noise({ dur: 0.1, vol: 0.11, freq: 900, freqEnd: 300, type: 'lowpass' });
+    tone({ freq: 180, freqEnd: 80, type: 'triangle', dur: 0.08, vol: 0.07 });
+  },
+  // ── 구조물 ──
+  towerHit() {
+    noise({ dur: 0.12, vol: 0.28, freq: 700, freqEnd: 250, type: 'lowpass', q: 0.7 });
+    tone({ freq: 140, freqEnd: 70, type: 'triangle', dur: 0.16, vol: 0.24, lp: 900 });
+  },
   towerDown() {
-    // 무너지는 굉음: 저음 럼블 + 잔해
-    noise({ dur: 0.7, vol: 0.4, freq: 300 });
-    noise({ dur: 1.1, vol: 0.25, freq: 140, delay: 0.15 });
-    tone({ freq: 150, freqEnd: 34, type: 'sawtooth', dur: 1.0, vol: 0.3 });
-    tone({ freq: 60, freqEnd: 28, type: 'sine', dur: 1.3, vol: 0.35 });
-    noise({ dur: 0.25, vol: 0.15, freq: 900, delay: 0.5 }); // 돌조각
+    noise({ dur: 0.8, vol: 0.32, freq: 400, freqEnd: 90, type: 'lowpass', q: 0.5 });
+    noise({ dur: 1.1, vol: 0.2, freq: 200, freqEnd: 60, type: 'lowpass', delay: 0.12 });
+    tone({ freq: 150, freqEnd: 32, type: 'sawtooth', dur: 1.0, vol: 0.24, lp: 700 });
+    tone({ freq: 58, freqEnd: 26, type: 'sine', dur: 1.3, vol: 0.3 });
+    noise({ dur: 0.3, vol: 0.11, freq: 2200, type: 'highpass', delay: 0.5 }); // 돌조각
   },
-  gold() { tone({ freq: 1200, type: 'sine', dur: 0.06, vol: 0.08 }); tone({ freq: 1600, type: 'sine', dur: 0.08, vol: 0.07, delay: 0.05 }); },
-  levelUp() { [523, 659, 784, 1047].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.2, vol: 0.12, delay: i * 0.07 })); },
-  ping() { tone({ freq: 880, type: 'sine', dur: 0.12, vol: 0.15 }); tone({ freq: 880, type: 'sine', dur: 0.12, vol: 0.12, delay: 0.15 }); },
-  pingPraise() { [659, 784, 988].forEach((f, i) => tone({ freq: f, type: 'sine', dur: 0.15, vol: 0.1, delay: i * 0.08 })); },
-  breathe() { tone({ freq: 220, freqEnd: 330, type: 'sine', dur: 1.2, vol: 0.06, attack: 0.4 }); },
-  breatheDone() { [392, 523, 659].forEach((f, i) => tone({ freq: f, type: 'sine', dur: 0.4, vol: 0.1, delay: i * 0.12 })); },
-  event() { tone({ freq: 440, type: 'triangle', dur: 0.3, vol: 0.14 }); tone({ freq: 554, type: 'triangle', dur: 0.4, vol: 0.12, delay: 0.15 }); },
-  choiceGood() { [523, 659, 784].forEach((f, i) => tone({ freq: f, type: 'sine', dur: 0.25, vol: 0.1, delay: i * 0.09 })); },
-  choiceBad() { tone({ freq: 260, freqEnd: 180, type: 'sawtooth', dur: 0.4, vol: 0.12 }); },
-  click() { tone({ freq: 800, type: 'sine', dur: 0.05, vol: 0.1 }); },
-  recall() { tone({ freq: 440, freqEnd: 880, type: 'sine', dur: 1.0, vol: 0.08, attack: 0.3 }); },
-  victory() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.5, vol: 0.15, delay: i * 0.15 })); },
-  defeat() { [440, 392, 330, 262].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.5, vol: 0.13, delay: i * 0.2 })); },
-  minionDie() { noise({ dur: 0.08, vol: 0.12, freq: 700 }); },
-  buff() { tone({ freq: 660, freqEnd: 1320, type: 'sine', dur: 0.4, vol: 0.1 }); },
+  // ── 경제·성장 ──
+  gold() { tone({ freq: 1400, type: 'sine', dur: 0.05, vol: 0.07 }); tone({ freq: 2000, type: 'sine', dur: 0.07, vol: 0.055, delay: 0.04 }); },
+  levelUp() {
+    [523, 659, 784, 1047].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.24, vol: 0.1, delay: i * 0.06 }));
+    tone({ freq: 1568, type: 'sine', dur: 0.5, vol: 0.04, delay: 0.24, attack: 0.05 });
+  },
+  buff() { tone({ freq: 523, freqEnd: 1046, type: 'sine', dur: 0.4, vol: 0.1, lp: 3000 }); tone({ freq: 784, type: 'sine', dur: 0.3, vol: 0.045, delay: 0.1 }); },
+  // 정글 오브젝트 획득 — 승리보다 작은 밝은 징글
+  objective() {
+    [392, 523, 659].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.3, vol: 0.1, delay: i * 0.09 }));
+    tone({ freq: 131, type: 'sine', dur: 0.4, vol: 0.12 });
+  },
+  // ── SEL · UI ──
+  ping() { tone({ freq: 940, type: 'sine', dur: 0.1, vol: 0.12 }); tone({ freq: 940, type: 'sine', dur: 0.1, vol: 0.09, delay: 0.13 }); },
+  pingPraise() { [659, 831, 988].forEach((f, i) => tone({ freq: f, type: 'sine', dur: 0.18, vol: 0.085, delay: i * 0.07, attack: 0.01 })); },
+  breathe() { tone({ freq: 196, freqEnd: 294, type: 'sine', dur: 1.4, vol: 0.07, attack: 0.5, lp: 900 }); }, // 들숨 파드
+  breatheDone() { [392, 523, 659, 784].forEach((f, i) => tone({ freq: f, type: 'sine', dur: 0.5, vol: 0.075, delay: i * 0.1, attack: 0.03 })); },
+  event() {
+    tone({ freq: 466, type: 'triangle', dur: 0.3, vol: 0.12, lp: 2000 });
+    tone({ freq: 587, type: 'triangle', dur: 0.45, vol: 0.1, delay: 0.14 });
+    tone({ freq: 1175, type: 'sine', dur: 0.3, vol: 0.03, delay: 0.14 });
+  },
+  choiceGood() { [523, 659, 784, 1047].forEach((f, i) => tone({ freq: f, type: 'sine', dur: 0.28, vol: 0.085, delay: i * 0.08, attack: 0.01 })); },
+  choiceBad() { tone({ freq: 280, freqEnd: 160, type: 'sawtooth', dur: 0.45, vol: 0.1, lp: 1200 }); tone({ freq: 140, freqEnd: 90, type: 'sine', dur: 0.4, vol: 0.09 }); },
+  click() { tone({ freq: 900, type: 'sine', dur: 0.04, vol: 0.09 }); },
+  recall() { tone({ freq: 392, freqEnd: 784, type: 'sine', dur: 1.1, vol: 0.08, attack: 0.3, lp: 2500 }); tone({ freq: 588, type: 'sine', dur: 0.8, vol: 0.04, delay: 0.3 }); },
+  // ── 게임 종료 스팅어 (Suno 파일 없으면 폴백) ──
+  victory() {
+    [523, 659, 784, 1047].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.6, vol: 0.13, delay: i * 0.12, attack: 0.01 }));
+    tone({ freq: 131, type: 'sine', dur: 1.2, vol: 0.2 });
+    tone({ freq: 1568, type: 'sine', dur: 0.8, vol: 0.045, delay: 0.48 });
+    noise({ dur: 0.7, vol: 0.05, freq: 8000, type: 'highpass', delay: 0.36 });
+  },
+  defeat() {
+    [523, 466, 392, 311].forEach((f, i) => tone({ freq: f, type: 'triangle', dur: 0.6, vol: 0.11, delay: i * 0.18, lp: 1800 }));
+    tone({ freq: 98, freqEnd: 65, type: 'sine', dur: 1.4, vol: 0.15 });
+  },
 };
 
 // ═══════════════════════════════════════════════════════
@@ -359,6 +424,34 @@ export async function startMusic(mode = 'game') {
 export function stopMusic() {
   currentMode = null;
   stopMusicInternal();
+}
+
+// ── 게임 종료 스팅어: bgm_victory.mp3 / bgm_defeat.mp3 있으면 1회 재생, 없으면 프로시저럴 SFX 폴백 ──
+const STINGER_FILES = {
+  victory: './assets/audio/bgm_victory.mp3',
+  defeat: './assets/audio/bgm_defeat.mp3',
+};
+const stingerBuffers = {}; // kind → AudioBuffer | 'missing'
+export async function playStinger(kind) {
+  if (!ctx || !enabled) return;
+  if (stingerBuffers[kind] === undefined) {
+    try {
+      const res = await fetch(STINGER_FILES[kind]);
+      if (!res.ok) throw 0;
+      stingerBuffers[kind] = await ctx.decodeAudioData(await res.arrayBuffer());
+    } catch { stingerBuffers[kind] = 'missing'; }
+  }
+  const buf = stingerBuffers[kind];
+  if (buf && buf !== 'missing') {
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const g = ctx.createGain();
+    g.gain.value = 0.85;
+    src.connect(g).connect(musicGain);
+    src.start();
+  } else {
+    (kind === 'victory' ? SFX.victory : SFX.defeat)();
+  }
 }
 
 // 디버그·검증용 상태 조회

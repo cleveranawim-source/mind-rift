@@ -9,7 +9,7 @@ import { updateHeroAI, updateMinionAI } from './ai/ai.js';
 import { SelSystem } from './sel/sel.js';
 import { updateFX, drawFX, drawUnderFX, drawFloaters, clearFX, shake, spawnParticles, spawnRing, spawnFloater, spawnCorpse, addShake } from './fx/fx.js';
 import { drawHUD, drawWorldPings, pingWheelSelection, minimapRect } from './ui/hud.js';
-import { SFX, startMusic, stopMusic, toggleMute } from './audio/audio.js';
+import { SFX, startMusic, stopMusic, toggleMute, playStinger } from './audio/audio.js';
 import { envReady, UNIT, MON, loadImg, imgReady } from './ui/assets.js';
 import { Renderer3D } from './render3d/renderer3d.js';
 import { drawUnitBars } from './ui/hud.js';
@@ -517,7 +517,7 @@ export class Game {
         this.spirit = null;
         this.banner(`✨ ${team === this.player.team ? '우리 팀' : '적 팀'}이 마음의 정령을 획득!`);
         if (team === this.player.team) { this.sel.addMorale(12); this.sel.addTilt(-10); }
-        SFX.victory();
+        SFX.objective();
       }
       if (unit === this.sage && srcHero) {
         const team = srcHero.team;
@@ -526,7 +526,7 @@ export class Game {
         this.sage = null;
         this.banner(`👁 ${team === this.player.team ? '우리 팀' : '적 팀'}이 지혜의 수호자를 획득!`);
         if (team === this.player.team) this.sel.addMorale(15);
-        SFX.victory();
+        SFX.objective();
       }
       return;
     }
@@ -556,7 +556,7 @@ export class Game {
     }
     this.timescale = 0.25;
     stopMusic();
-    (victory ? SFX.victory : SFX.defeat)();
+    playStinger(victory ? 'victory' : 'defeat');
     addShake(12);
     const nx = victory ? NEXUS_POS.red : NEXUS_POS.blue;
     spawnParticles({ x: nx.x, y: nx.y, count: 80, color: victory ? '#3fe5a0' : '#ff5544', speed: 400, life: 1.5, size: 7, glow: true });
