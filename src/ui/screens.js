@@ -25,6 +25,7 @@ export function showTitle(onStart, onClass = null, onTeacher = null) {
         <div class="title-buttons">
           <button class="btn-primary" id="btn-start">협곡 입장</button>
           <button class="btn-ghost" id="btn-class">🏫 반 모드</button>
+          <button class="btn-ghost" id="btn-teaser">▶ 티저 영상</button>
         </div>
         <button class="teacher-link" id="btn-teacher">🧑‍🏫 교사 발표모드</button>
         <div class="controls-guide">
@@ -44,6 +45,31 @@ export function showTitle(onStart, onClass = null, onTeacher = null) {
   });
   if (onClass) document.getElementById('btn-class').addEventListener('click', () => { SFX.click(); onClass(); });
   if (onTeacher) document.getElementById('btn-teacher').addEventListener('click', () => { SFX.click(); onTeacher(); });
+  document.getElementById('btn-teaser').addEventListener('click', () => { SFX.click(); showTeaserModal(); });
+}
+
+// ═══ 티저 영상 모달 ═══
+export function showTeaserModal() {
+  const layer = document.createElement('div');
+  layer.className = 'teaser-modal';
+  layer.innerHTML = `
+    <div class="teaser-backdrop"></div>
+    <div class="teaser-box">
+      <button class="teaser-close" aria-label="닫기">✕</button>
+      <video class="teaser-video" src="./assets/video/teaser.mp4" controls autoplay playsinline></video>
+    </div>`;
+  document.body.appendChild(layer);
+  const video = layer.querySelector('.teaser-video');
+  const close = () => {
+    try { video.pause(); } catch {}
+    layer.remove();
+    window.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  window.addEventListener('keydown', onKey);
+  layer.querySelector('.teaser-close').addEventListener('click', () => { SFX.click(); close(); });
+  layer.querySelector('.teaser-backdrop').addEventListener('click', close);
+  video.addEventListener('ended', close);
 }
 
 // ═══ 챔피언 선택 ═══
