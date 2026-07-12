@@ -202,12 +202,29 @@ function drawSkillBar(ctx, game) {
     ctx.strokeStyle = s.recall && game.player.recalling ? '#3fe5a0' : 'rgba(255,255,255,0.15)';
     ctx.lineWidth = 1.5;
     roundRect(ctx, sx, sy, slotW, slotW, 9); ctx.stroke();
-    // 아이콘 (스킬명 첫 글자)
-    ctx.font = 'bold 21px "Noto Sans KR", sans-serif';
-    ctx.textAlign = 'center';
+    // 아이콘 (스킬 이모지 — 없으면 이름 첫 글자 폴백)
+    const icon = s.recall ? '🏠' : (s.def.emoji || s.def.name[0]);
+    const isEmoji = s.recall || !!s.def.emoji;
     const noMana = !s.recall && p.mana < s.def.mana;
-    ctx.fillStyle = noMana ? '#5577cc' : s.recall ? '#9fb8a8' : p.color;
-    ctx.fillText(s.recall ? '⌂' : s.def.name[0], sx + slotW / 2, sy + 34);
+    ctx.textAlign = 'center';
+    if (isEmoji) {
+      const cx = sx + slotW / 2, cy = sy + slotW / 2;
+      // 아이콘 뒤 은은한 원반 — 대비 확보(색·흑백 렌더 모두 대응)
+      const bg = ctx.createRadialGradient(cx, cy - 3, 3, cx, cy, slotW * 0.5);
+      bg.addColorStop(0, noMana ? 'rgba(90,110,150,0.28)' : 'rgba(63,229,160,0.24)');
+      bg.addColorStop(1, 'rgba(63,229,160,0)');
+      ctx.fillStyle = bg;
+      ctx.beginPath(); ctx.arc(cx, cy, slotW * 0.45, 0, TAU); ctx.fill();
+      // 이모지는 fillStyle로 색을 못 바꾸므로 마나부족은 반투명으로 표현
+      ctx.font = '27px "Noto Sans KR", sans-serif';
+      ctx.globalAlpha = noMana ? 0.4 : 1;
+      ctx.fillText(icon, cx, sy + 38);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.font = 'bold 21px "Noto Sans KR", sans-serif';
+      ctx.fillStyle = noMana ? '#5577cc' : p.color;
+      ctx.fillText(icon, sx + slotW / 2, sy + 34);
+    }
     // 쿨다운 오버레이
     if (s.cd > 0) {
       const def = s.key === 'E' ? DASH : s.def;

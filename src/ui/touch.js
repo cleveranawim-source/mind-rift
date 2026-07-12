@@ -26,12 +26,12 @@ export function initTouchControls(game) {
       <button class="tc-skill tc-util" data-act="breath" title="심호흡">🫁</button>
       <button class="tc-skill tc-util" data-act="ping" title="격려 핑">💚</button>
       <div class="tc-skill-row">
-        <button class="tc-skill" data-slot="E" style="--c:${champ.color}"><b>E</b><small>도약</small></button>
-        <button class="tc-skill" data-slot="W" style="--c:${champ.color}"><b>W</b><small>${champ.W.name}</small></button>
-        <button class="tc-skill" data-slot="Q" style="--c:${champ.color}"><b>Q</b><small>${champ.Q.name}</small></button>
-        <button class="tc-skill tc-attack" data-slot="A"><b>⚔</b><small>공격</small></button>
+        <button class="tc-skill" data-slot="E" style="--c:${champ.color}"><b>💨</b><small>도약</small></button>
+        <button class="tc-skill" data-slot="W" style="--c:${champ.color}"><b>${champ.W.emoji || 'W'}</b><small>${champ.W.name}</small></button>
+        <button class="tc-skill" data-slot="Q" style="--c:${champ.color}"><b>${champ.Q.emoji || 'Q'}</b><small>${champ.Q.name}</small></button>
+        <button class="tc-skill tc-attack" data-slot="A"><b>⚔️</b><small>공격</small></button>
       </div>
-      <button class="tc-skill tc-util tc-recall" data-act="recall" title="귀환">⌂</button>
+      <button class="tc-skill tc-util tc-recall" data-act="recall" title="귀환">🏠</button>
     </div>
   `;
   document.body.appendChild(root);

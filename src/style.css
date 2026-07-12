@@ -746,3 +746,44 @@ kbd {
   transition: background 0.15s;
 }
 .teaser-close:hover { background: rgba(63,229,160,0.2); }
+
+/* ═══ 게임 중 나가기 ═══ */
+.exit-btn {
+  position: fixed; top: 14px; right: 14px; z-index: 60;
+  width: 40px; height: 40px; border-radius: 11px;
+  background: rgba(8,14,10,0.55);
+  border: 1px solid rgba(63,229,160,0.28);
+  color: rgba(232,244,236,0.72);
+  font-size: 19px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.exit-btn:hover { background: rgba(8,14,10,0.8); color: var(--mint); transform: scale(1.06); }
+
+.exit-confirm {
+  position: fixed; inset: 0; z-index: 120;
+  background: rgba(4,8,6,0.66); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  animation: exitFade 0.16s ease;
+}
+@keyframes exitFade { from { opacity: 0; } to { opacity: 1; } }
+.exit-card {
+  width: min(360px, 86vw); text-align: center;
+  background: linear-gradient(180deg, #101a14, #0a120d);
+  border: 1px solid var(--mint-dim); border-radius: 20px;
+  padding: 28px 26px 24px;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.6);
+}
+.exit-card .exit-emoji { font-size: 40px; margin-bottom: 6px; }
+.exit-card h3 { color: #fff; font-size: 21px; font-weight: 800; margin: 4px 0 10px; }
+.exit-card p { color: rgba(232,244,236,0.66); font-size: 14px; line-height: 1.6; margin-bottom: 22px; }
+.exit-actions { display: flex; gap: 10px; }
+.exit-actions button { flex: 1; padding: 13px 0; font-size: 15px; }
+.btn-danger {
+  font-family: 'Noto Sans KR', sans-serif; font-weight: 700;
+  background: rgba(255,84,68,0.14); color: #ff7a68;
+  border: 1.5px solid rgba(255,84,68,0.5); border-radius: 14px; cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-danger:hover { background: rgba(255,84,68,0.26); }

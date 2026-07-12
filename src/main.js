@@ -48,6 +48,7 @@ function startGame(champId, classCtx = null) {
     classCtx,
     onEnd: (g) => {
       destroyShop();
+      removeExitButton();
       clearClassSession();
       showEnd(g, (backToTitle) => {
         if (backToTitle) gotoTitle();
@@ -58,11 +59,54 @@ function startGame(champId, classCtx = null) {
   });
   initShop(game);
   game.start();
+  installExitButton();
   window.__game = game; // 개발·디버그용 핸들
+}
+
+// ── 게임 중 나가기 (SEL: 홧김 이탈 방지를 위해 확인창을 한 번 거침) ──
+let exitBtn = null;
+function installExitButton() {
+  removeExitButton();
+  exitBtn = document.createElement('button');
+  exitBtn.id = 'exit-btn';
+  exitBtn.className = 'exit-btn';
+  exitBtn.setAttribute('aria-label', '나가기');
+  exitBtn.textContent = '☰';
+  exitBtn.addEventListener('click', confirmExit);
+  document.body.appendChild(exitBtn);
+}
+function removeExitButton() {
+  if (exitBtn) { exitBtn.remove(); exitBtn = null; }
+  const c = document.getElementById('exit-confirm');
+  if (c) c.remove();
+}
+function confirmExit() {
+  if (!game || game.over || document.getElementById('exit-confirm')) return;
+  const savedTs = game.timescale;
+  game.timescale = 0; // 결정하는 동안 협곡 일시정지
+  const box = document.createElement('div');
+  box.id = 'exit-confirm';
+  box.className = 'exit-confirm';
+  box.innerHTML = `
+    <div class="exit-card">
+      <div class="exit-emoji">🌙</div>
+      <h3>협곡을 떠날까요?</h3>
+      <p>지금 나가면 이번 판의 마음 여정과<br>성찰 리포트는 저장되지 않아요.</p>
+      <div class="exit-actions">
+        <button class="btn-ghost" id="exit-no">계속 할게요</button>
+        <button class="btn-danger" id="exit-yes">나가기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(box);
+  const close = () => { box.remove(); if (game) game.timescale = savedTs; };
+  box.querySelector('#exit-no').addEventListener('click', close);
+  box.querySelector('#exit-yes').addEventListener('click', () => { box.remove(); gotoTitle(); });
+  box.addEventListener('click', (e) => { if (e.target === box) close(); });
 }
 
 function gotoPick() {
   if (game) { game.destroy(); game = null; }
+  removeExitButton();
   destroyShop();
   startMusic('title');
   showPick((champId) => startGame(champId), () => gotoTitle());
@@ -71,6 +115,7 @@ function gotoPick() {
 // ── 반 모드 흐름 ──
 function gotoClass() {
   if (game) { game.destroy(); game = null; }
+  removeExitButton();
   destroyShop();
   startMusic('title');
   showClassJoin(
@@ -81,12 +126,14 @@ function gotoClass() {
 
 function gotoTeacher() {
   if (game) { game.destroy(); game = null; }
+  removeExitButton();
   destroyShop();
   showTeacherDash(() => gotoTitle());
 }
 
 function gotoTitle() {
   if (game) { game.destroy(); game = null; }
+  removeExitButton();
   destroyShop();
   stopClassWatch();
   startMusic('title');

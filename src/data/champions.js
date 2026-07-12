@@ -12,8 +12,8 @@ export const CHAMPIONS = [
     color: '#e8a33d', colorDark: '#8a5f1e',
     kind: 'melee',
     stats: { hp: 780, hpPerLv: 102, mp: 260, mpPerLv: 30, ad: 64, adPerLv: 4.4, range: 150, ms: 345, as: 0.8, armor: 30, armorPerLv: 3.6, regen: 2.6 },
-    Q: { name: '대지 강타', icon: 'Q', desc: '주변의 땅을 내리쳐 피해를 주고 적을 느리게 한다', cd: 7, mana: 45, type: 'selfAoe', radius: 230, dmg: 72, dmgPerLv: 15, slow: 0.4, slowDur: 1.4 },
-    W: { name: '굳건한 의지', icon: 'W', desc: '마음을 다잡아 보호막을 얻는다', cd: 13, mana: 60, type: 'shieldSelf', amount: 140, perLv: 30, dur: 4 },
+    Q: { name: '대지 강타', icon: 'Q', emoji: '🪨', desc: '주변의 땅을 내리쳐 피해를 주고 적을 느리게 한다', cd: 7, mana: 45, type: 'selfAoe', radius: 230, dmg: 72, dmgPerLv: 15, slow: 0.4, slowDur: 1.4 },
+    W: { name: '굳건한 의지', icon: 'W', emoji: '🛡️', desc: '마음을 다잡아 보호막을 얻는다', cd: 13, mana: 60, type: 'shieldSelf', amount: 140, perLv: 30, dur: 4 },
   },
   {
     id: 'fox',
@@ -25,8 +25,8 @@ export const CHAMPIONS = [
     color: '#9b6dff', colorDark: '#5b3aa8',
     kind: 'melee',
     stats: { hp: 660, hpPerLv: 88, mp: 300, mpPerLv: 36, ad: 68, adPerLv: 4.6, range: 160, ms: 365, as: 0.95, armor: 25, armorPerLv: 3.0, regen: 2.2 },
-    Q: { name: '그림자 습격', icon: 'Q', desc: '적에게 순식간에 파고들어 벤다', cd: 8, mana: 50, type: 'dashStrike', range: 500, dmg: 84, dmgPerLv: 17 },
-    W: { name: '알아차림', icon: 'W', desc: '주변을 꿰뚫어 보고 발걸음이 빨라지며 기력을 회복한다', cd: 14, mana: 55, type: 'insight', msBoost: 0.4, dur: 3, heal: 60, healPerLv: 12 },
+    Q: { name: '그림자 습격', icon: 'Q', emoji: '🗡️', desc: '적에게 순식간에 파고들어 벤다', cd: 8, mana: 50, type: 'dashStrike', range: 500, dmg: 84, dmgPerLv: 17 },
+    W: { name: '알아차림', icon: 'W', emoji: '👁️', desc: '주변을 꿰뚫어 보고 발걸음이 빨라지며 기력을 회복한다', cd: 14, mana: 55, type: 'insight', msBoost: 0.4, dur: 3, heal: 60, healPerLv: 12 },
   },
   {
     id: 'flame',
@@ -38,8 +38,8 @@ export const CHAMPIONS = [
     color: '#ff6b4a', colorDark: '#a83a22',
     kind: 'ranged',
     stats: { hp: 570, hpPerLv: 74, mp: 400, mpPerLv: 52, ad: 55, adPerLv: 3.2, range: 480, ms: 335, as: 0.7, armor: 20, armorPerLv: 2.5, regen: 2.0 },
-    Q: { name: '화염구', icon: 'Q', desc: '직선으로 화염구를 날려 처음 맞은 적에게 큰 피해', cd: 6, mana: 55, type: 'skillshot', range: 880, speed: 950, dmg: 98, dmgPerLv: 21, radius: 55 },
-    W: { name: '감정의 파동', icon: 'W', desc: '지정한 곳에 감정 에너지를 모아 폭발시킨다', cd: 11, mana: 75, type: 'groundAoe', range: 720, radius: 190, dmg: 86, dmgPerLv: 19, delay: 0.55 },
+    Q: { name: '화염구', icon: 'Q', emoji: '🔥', desc: '직선으로 화염구를 날려 처음 맞은 적에게 큰 피해', cd: 6, mana: 55, type: 'skillshot', range: 880, speed: 950, dmg: 98, dmgPerLv: 21, radius: 55 },
+    W: { name: '감정의 파동', icon: 'W', emoji: '💥', desc: '지정한 곳에 감정 에너지를 모아 폭발시킨다', cd: 11, mana: 75, type: 'groundAoe', range: 720, radius: 190, dmg: 86, dmgPerLv: 19, delay: 0.55 },
   },
   {
     id: 'gale',
@@ -51,8 +51,8 @@ export const CHAMPIONS = [
     color: '#4ad1e8', colorDark: '#20798a',
     kind: 'ranged',
     stats: { hp: 585, hpPerLv: 80, mp: 320, mpPerLv: 40, ad: 62, adPerLv: 5.0, range: 525, ms: 340, as: 0.92, armor: 22, armorPerLv: 2.8, regen: 1.9 },
-    Q: { name: '관통 화살', icon: 'Q', desc: '적들을 꿰뚫는 화살을 날린다', cd: 7, mana: 50, type: 'pierce', range: 920, speed: 1150, dmg: 86, dmgPerLv: 18, width: 75 },
-    W: { name: '질풍의 집중', icon: 'W', desc: '숨을 고르고 목표에 집중해 공격이 빨라진다', cd: 15, mana: 45, type: 'frenzy', asBoost: 0.6, msBoost: 0.15, dur: 4 },
+    Q: { name: '관통 화살', icon: 'Q', emoji: '🏹', desc: '적들을 꿰뚫는 화살을 날린다', cd: 7, mana: 50, type: 'pierce', range: 920, speed: 1150, dmg: 86, dmgPerLv: 18, width: 75 },
+    W: { name: '질풍의 집중', icon: 'W', emoji: '🌪️', desc: '숨을 고르고 목표에 집중해 공격이 빨라진다', cd: 15, mana: 45, type: 'frenzy', asBoost: 0.6, msBoost: 0.15, dur: 4 },
   },
   {
     id: 'moon',
@@ -64,13 +64,13 @@ export const CHAMPIONS = [
     color: '#ffd93d', colorDark: '#a8861a',
     kind: 'ranged',
     stats: { hp: 610, hpPerLv: 82, mp: 430, mpPerLv: 56, ad: 50, adPerLv: 2.9, range: 500, ms: 340, as: 0.72, armor: 24, armorPerLv: 3.0, regen: 2.4 },
-    Q: { name: '달빛 세례', icon: 'Q', desc: '가장 다친 아군을 치유한다', cd: 9, mana: 70, type: 'healAlly', range: 720, heal: 95, healPerLv: 21 },
-    W: { name: '수호의 빛', icon: 'W', desc: '아군에게 보호막을 씌운다', cd: 12, mana: 65, type: 'shieldAlly', range: 720, amount: 115, perLv: 25, dur: 3.5 },
+    Q: { name: '달빛 세례', icon: 'Q', emoji: '💗', desc: '가장 다친 아군을 치유한다', cd: 9, mana: 70, type: 'healAlly', range: 720, heal: 95, healPerLv: 21 },
+    W: { name: '수호의 빛', icon: 'W', emoji: '✨', desc: '아군에게 보호막을 씌운다', cd: 12, mana: 65, type: 'shieldAlly', range: 720, amount: 115, perLv: 25, dur: 3.5 },
   },
 ];
 
 // 공용 E 스킬 — 모든 챔피언
-export const DASH = { name: '마음의 도약', icon: 'E', desc: '마음을 가다듬고 순간적으로 이동한다', cd: 16, mana: 40, dist: 300 };
+export const DASH = { name: '마음의 도약', icon: 'E', emoji: '💨', desc: '마음을 가다듬고 순간적으로 이동한다', cd: 16, mana: 40, dist: 300 };
 
 // ─── 그림자 군단 (적팀) ───
 // 마음을 무너뜨리는 다섯 가지 내면의 목소리. 같은 챔피언 키트를 사용하되 이름·색이 다르다.
