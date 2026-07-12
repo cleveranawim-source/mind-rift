@@ -637,12 +637,20 @@ export class Renderer3D {
           actor.obj.position.x += Math.cos(h.facing) * k;
           actor.obj.position.z += Math.sin(h.facing) * k;
         }
-        // 피격 넉백 + 휘청
-        if (h.hitFlash > 0 && h.hitDir !== undefined) {
-          const kb = (h.hitFlash / 0.13);
+        // 피격 넉백 + 휘청 (누적 금지 — rotation.z를 매 프레임 절대값으로 확정)
+        const hitting = h.hitFlash > 0 && h.hitDir !== undefined;
+        const kb = hitting ? (h.hitFlash / 0.13) : 0;
+        const tilt = kb * 0.18;
+        if (actor.action) {
+          // 걷기 클립 캐릭터: obj.rotation.z를 아무도 재설정 안 하므로 절대값으로 확정
+          actor.obj.rotation.z = tilt;
+        } else {
+          // 여우류: 위에서 rotation.z를 sin으로 매 프레임 설정했으므로 틸트만 가산(누적 X)
+          actor.obj.rotation.z += tilt;
+        }
+        if (hitting) {
           actor.obj.position.x += Math.cos(h.hitDir) * kb * 7;
           actor.obj.position.z += Math.sin(h.hitDir) * kb * 7;
-          actor.obj.rotation.z += kb * 0.07;
           actor.obj.scale.set(actor.baseScale * (1 + kb * 0.05), actor.baseScale * (1 - kb * 0.07), actor.baseScale);
         } else {
           actor.obj.scale.setScalar(actor.baseScale);
